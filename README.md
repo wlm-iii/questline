@@ -161,6 +161,10 @@ uv run python -m questline.jobs worker
 
 Application and queue tables live in the private **`questline` schema**. Do **not** add it to
 Supabase's exposed API schemas or grant browser/anonymous roles access. All clients use FastAPI.
+Connections explicitly set the schema after connecting because session poolers may ignore startup
+`search_path` options. If you installed the queue with older code, check that all
+`procrastinate_*` tables and functions are in `questline`, not `public`; stop API/workers and
+relocate existing queue objects before installing a second queue. Preserve queued jobs and data.
 The service token grants access to all data. Member tokens are scoped to a single trip, but anyone
 with a trip link can join by name. Use synthetic conversations; this is not private/account-based
 identity, and retention/deletion controls are still pending.
