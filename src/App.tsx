@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { QuestCard } from './components/QuestCard'
 import heroImg from './assets/hero.png'
 import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
@@ -28,6 +29,9 @@ function App() {
         >
           Count is {count}
         </button>
+        <div style={{ marginTop: '2rem', textAlign: 'left' }}>
+          <QuestCard />
+        </div>
       </section>
 
       <div className="ticks"></div>
