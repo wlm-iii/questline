@@ -7,20 +7,35 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Frontend artifacts
+node_modules/
+dist/
+dist-ssr/
 *.local
 
+# Secrets (including .env.test); commit placeholders only
 .env
 .env.*
 !.env.example
-!.env.test
+
+# Python and tooling
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+
+# Local Nix/direnv cache (keep the portable .envrc)
+.direnv/
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
