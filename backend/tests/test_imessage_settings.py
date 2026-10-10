@@ -28,3 +28,11 @@ def test_api_url_and_token_are_required(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(ValidationError):
         RelaySettings(_env_file=None)
+
+
+def test_state_path_expands_the_home_directory(monkeypatch):
+    monkeypatch.setenv("QUESTLINE_API_URL", "https://api.questline.test")
+    monkeypatch.setenv("API_TOKEN", "relay-token")
+    monkeypatch.setenv("WEB_BASE_URL", "https://questline.test")
+    monkeypatch.setenv("RELAY_STATE_PATH", "~/relay.json")
+    assert RelaySettings(_env_file=None).relay_state_path == Path.home() / "relay.json"

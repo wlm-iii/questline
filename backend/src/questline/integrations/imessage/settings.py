@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +13,13 @@ class RelaySettings(BaseSettings):
     api_token: SecretStr
     web_base_url: str
     imsg_bin: str = "imsg"
-    relay_state_path: Path = Path("~/.questline/imessage-relay.json").expanduser()
+    relay_state_path: Path = Field(
+        default=Path("~/.questline/imessage-relay.json"), validate_default=True
+    )
     relay_flush_seconds: float = Field(default=15, gt=0)
     relay_flush_max: int = Field(default=20, ge=1, le=500)
+
+    @field_validator("relay_state_path")
+    @classmethod
+    def expand_home(cls, value: Path) -> Path:
+        return value.expanduser()
