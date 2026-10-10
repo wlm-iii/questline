@@ -522,6 +522,7 @@ the source of truth for payload schemas.
 | GET | `/channels/imessage/{chat_guid}` | — (Bearer only) | 200 `{trip_id}`; 404 if unlinked (relay cache warm-up) |
 | POST | `/trips/{trip_id}/imessage/batch` | `{messages: [{guid, handle, display_name?, sent_at, text}]}` (Bearer only) | 202 `{import_id, inserted}`; upserts members by handle, inserts messages, enqueues `extract_places` |
 | POST | `/trips/{trip_id}/imessage/reactions` | `{reactions: [{handle, target_guid, kind: love\|like\|dislike, added}]}` (Bearer only) | 200 `{applied, skipped}` |
+| PATCH | `/trips/{trip_id}/imessage/members/{handle}` | `{name}` (Bearer only; **proposed**, see §11.1) | 200 `{member}`; 404 if no member has that handle yet |
 
 Rules:
 
@@ -664,6 +665,17 @@ No SIP changes and no IMCore injection.
 6. Inline replies (`thread_originator_guid`) are stored like any message; when the parent mentions
    a place, the reply counts as evidence for that place. No separate thread UI.
 
+**Contract gaps found while building the relay** (backend lead to confirm):
+
+- `@questline I'm <name>` needs a way to rename a member by handle. Proposed:
+  `PATCH /trips/{trip_id}/imessage/members/{handle}` (§10). The relay calls it, treats 404 as
+  "no member yet", and sends the chosen name as `display_name` on that sender's later batches.
+- Step 6 needs the parent message: the `imessage/batch` payload has no thread field. Proposed:
+  optional `reply_to_guid` per message. The relay will send it once the backend accepts it (the
+  batch schema rejects unknown fields today).
+- `@questline import last N` and the `ChatAdapter` (`fetch_transcript`/`post_plan_link`) wrapper
+  are deferred with the §18 decision; the relay sends through `imsg rpc` directly.
+
 **Commands** (main group only; any participant may send them):
 
 | Command | Relay action | Bot reply |
@@ -777,7 +789,9 @@ single-process demo hosting).
 
 iMessage relay (env on the relay Mac only): `QUESTLINE_API_URL`, `API_TOKEN`, `WEB_BASE_URL`
 (for links in replies), `IMSG_BIN` (default `imsg`), `RELAY_STATE_PATH` (stores the last
-`rowid` and the chat → trip cache), `RELAY_FLUSH_SECONDS` (default 15).
+`rowid`, the chat → trip cache, and `I'm <name>` names), `RELAY_FLUSH_SECONDS` (default 15),
+`RELAY_FLUSH_MAX` (default 20). Put them in `backend/.env.relay` (template:
+`backend/.env.relay.example`).
 
 Never commit `.env` files. The frontend bundle contains only the browser Maps key and the API URL;
 never `API_TOKEN` or the database URL.
