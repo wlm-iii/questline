@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dendelion/paper-ui": "^0.23.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

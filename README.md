@@ -281,3 +281,27 @@ git switch -c feat/your-feature
 Keep credentials in your ignored `backend/.env`. Commit code, migrations, tests, and `uv.lock` changes,
 not local database volumes or secrets. See [suggested work streams](docs/architecture.md#work-streams)
 to divide implementation without duplicating responsibilities.
+
+## Frontend visual theme
+
+The starter screen is a responsive component preview with explicitly labeled demo data. It reuses
+Paper UI `Card`, `Button`, and `Stamp`; the sample card's View quest action toggles local preview
+text, not backend data. Shared styling lives in `src/styles/questline.css`, loaded after Paper UI.
+The scoped adapter selectors for Paper UI's internal texture/label layers should be checked when
+upgrading that package.
+
+Kenney RPG expansion panels and buttons use sliced image borders with the original sprite fills
+so edges retain their size as components grow. Quest cards pair a brown outer panel with a
+notched parchment inset and raised grey buttons, matching the supplied pack reference. Parchment (`#ECE3CE`), leather (`#D3BF8F`), frame (`#B7916A`), ink (`#6D543A`),
+and gold (`#CDA400`) come from the supplied pack. Forest, quest green, ocean blue, sage, and skipped
+red retain their existing design values. A local, seamless SVG parchment texture (`public/ui/textures/parchment.svg`) adds warm mottling
+and fine fibers to the page background, with CSS gradients for darker edges and a lighter reading
+area. Component grain remains subtle. The frontend uses ordinary CSS; Tailwind is not configured
+as a project dependency or Vite plugin. Stamp rings use
+content-sized CSS ovals with padding to keep the strokes clear of text, including wrapped labels.
+
+Black Chancery is self-hosted for headings, stamps, and buttons; body copy uses system sans-serif.
+Assets and original notices are in `public/ui/kenney/` (Kenney, CC0) and `public/fonts/` (the supplied
+Black Chancery font and its accompanying notes). No remote font service or new dependency is needed.
+Paper UI's distributed stylesheet references an unused `Luminari-Regular.woff`; Vite may report that
+unresolved reference during builds. This theme uses the supplied Black Chancery font instead.

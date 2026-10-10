@@ -1,0 +1,96 @@
+:root {
+  /* Warm materials sampled from Kenney's RPG expansion; semantic accents retained. */
+  --parchment: #ece3ce;
+  --leather: #d3bf8f;
+  --quest-border: #b7916a;
+  --ink: #6d543a;
+  --forest: #245b3c;
+  --quest-green: #2f8650;
+  --ocean-blue: #70b9e3;
+  --skipped-red: #bd5d52;
+  --sage: #add17f;
+  --gold: #cda400;
+  --quest-danger-surface: #f2d6d0;
+  --heading: 'Black Chancery', Georgia, serif;
+  --paper-font-default: var(--heading);
+  --paper-button-font: var(--heading);
+  --quest-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%236d543a' opacity='.09' filter='url(%23grain)' d='M0 0h160v160H0z'/%3E%3C/svg%3E");
+}
+
+/* Adapter selectors are scoped to our wrappers, never to unrelated Paper UI controls. */
+.quest-card {
+  border: 6px solid var(--quest-border);
+  border-image: url('/ui/kenney/panel_brown.png') 5 fill / 6px stretch;
+  border-radius: 7px;
+  background: #97714a;
+  box-shadow: 0 3px 0 #6d543a45;
+  overflow: visible;
+}
+.quest-card > svg { display: none; }
+.quest-card > [class*='textureLayer'] {
+  padding: 18px;
+  border-radius: 0;
+  clip-path: none;
+  background: transparent;
+  color: #faf2e1;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.quest-card > [class*='textureLayer'] > * + * { margin-top: 16px; }
+.quest-card-body {
+  border: 7px solid transparent;
+  border-image: url('/ui/kenney/panelInset_beigeLight.png') 5 fill / 7px stretch;
+  background: var(--parchment);
+  padding: 20px;
+  clip-path: polygon(0 0, calc(50% - 4px) 0, 50% 4px, calc(50% + 4px) 0, 100% 0, 100% 25%, calc(100% - 3px) calc(25% + 3px), 100% calc(25% + 6px), 100% 100%, 0 100%, 0 75%, 3px calc(75% - 3px), 0 calc(75% - 6px));
+  color: var(--ink);
+}
+.quest-card h3 { color: var(--forest); font-size: 36px; }
+.quest-card .quest-description { margin-top: 6px; }
+.quest-card-header, .quest-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.quest-number { font-family: var(--heading); font-size: 26px; color: #faf2e1; }
+.quest-card-footer { padding-top: 2px; }
+.quest-status { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.quest-status::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--skipped-red); box-shadow: 0 0 0 2px #faf2e150; }
+
+.quest-button {
+  min-height: 46px;
+  padding: 12px 26px;
+  border: 6px solid transparent;
+  border-image: url('/ui/kenney/buttonLong_blue.png') 5 fill / 6px stretch;
+  border-radius: 6px;
+  background: #838796;
+  color: #fff;
+  font-family: var(--heading);
+  font-size: 21px;
+  font-weight: 400;
+}
+.quest-button:active:not(:disabled) { border-image-source: url('/ui/kenney/buttonLong_blue_pressed.png'); }
+.quest-button:hover:not(:disabled) { filter: brightness(.96); }
+.quest-button > svg { display: none; }
+.quest-button--primary { color: #fff; }
+.quest-button--danger { background-color: var(--quest-danger-surface); color: var(--ink); }
+.quest-button:focus-visible { outline: 3px solid var(--forest); outline-offset: 5px; }
+
+/* A content-sized oval with an inset ring leaves a safe area around every label. */
+.quest-stamp {
+  padding: 13px 25px;
+  border: 2px solid #b1a077;
+  box-shadow: inset 0 2px 0 #faf2e1a0, inset 0 -3px 0 #6d543a25, 0 2px 0 #6d543a30;
+  border-radius: 50%;
+  background: var(--leather);
+  color: var(--ink);
+  font-family: var(--heading);
+  font-size: 21px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: center;
+  max-width: 100%;
+}
+.quest-stamp::after { content: ''; position: absolute; inset: 4px; border: 1px solid currentColor; border-radius: inherit; opacity: .45; pointer-events: none; }
+.quest-stamp > svg { display: none; }
+.quest-stamp [class*='label'] { white-space: normal; overflow-wrap: anywhere; }
+.quest-stamp--main { color: var(--forest); background-color: var(--sage); }
+.quest-stamp--side { color: var(--ink); background-color: var(--leather); }
+.quest-stamp--info { color: var(--forest); background-color: var(--ocean-blue); }
+.quest-stamp--danger { color: var(--ink); background-color: var(--quest-danger-surface); }
