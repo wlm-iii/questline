@@ -27,7 +27,7 @@
   overflow: visible;
 }
 .quest-card > svg { display: none; }
-.quest-card > [class*='textureLayer'] {
+.quest-card {
   padding: 18px;
   border-radius: 0;
   clip-path: none;
@@ -36,7 +36,7 @@
   font-size: 14px;
   line-height: 1.6;
 }
-.quest-card > [class*='textureLayer'] > * + * { margin-top: 16px; }
+.quest-card > * + * { margin-top: 16px; }
 .quest-card-body {
   border: 7px solid transparent;
   border-image: url('/ui/kenney/panelInset_beigeLight.png') 5 fill / 7px stretch;
@@ -57,7 +57,7 @@
   min-height: 46px;
   padding: 12px 26px;
   border: 6px solid transparent;
-  border-image: url('/ui/kenney/buttonLong_blue.png') 5 fill / 6px stretch;
+  border-image: url('/ui/kenney/buttonQuest_blue.svg') 5 fill / 6px stretch;
   border-radius: 6px;
   background: #838796;
   color: #fff;
@@ -65,7 +65,7 @@
   font-size: 21px;
   font-weight: 400;
 }
-.quest-button:active:not(:disabled) { border-image-source: url('/ui/kenney/buttonLong_blue_pressed.png'); }
+.quest-button:active:not(:disabled) { border-image-source: url('/ui/kenney/buttonQuest_blue_pressed.svg'); }
 .quest-button:hover:not(:disabled) { filter: brightness(.96); }
 .quest-button > svg { display: none; }
 .quest-button--primary { color: #fff; }
@@ -74,7 +74,9 @@
 
 /* A content-sized oval with an inset ring leaves a safe area around every label. */
 .quest-stamp {
-  padding: 13px 25px;
+  position: relative;
+  display: inline-block;
+  padding: 8px 20px;
   border: 2px solid #b1a077;
   box-shadow: inset 0 2px 0 #faf2e1a0, inset 0 -3px 0 #6d543a25, 0 2px 0 #6d543a30;
   border-radius: 50%;
