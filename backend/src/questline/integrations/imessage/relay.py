@@ -45,6 +45,8 @@ logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_CHARS = 10_000
 UNLINKED_CACHE_SECONDS = 60
+ECHO_SECONDS = 300
+SELF_REPLY_PREFIX = "🧭 Questline: "
 VOTE_TAPBACKS: dict[str, Literal["love", "like", "dislike"]] = {
     "love": "love",
     "like": "like",
@@ -93,6 +95,7 @@ class Relay:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         poll_interval: float = 2,
         poll_timeout: float = 180,
+        self_handle: str | None = None,
     ) -> None:
         self.api = api
         self.sender = sender
@@ -109,6 +112,10 @@ class Relay:
         self._unlinked_until: dict[str, float] = {}
         self._retry: list[ImsgMessage] = []
         self._tasks: set[asyncio.Task[None]] = set()
+        # Self-account mode: the relay shares a member's Apple ID, so "from me" rows are either
+        # that member typing (forwarded as `self_handle`) or echoes of our replies (dropped).
+        self._self_handle = self_handle
+        self._sent: list[tuple[float, str, str]] = []  # (expires_at, chat_guid, text)
 
     # Inbound rows
 
@@ -133,8 +140,12 @@ class Relay:
     async def _route_row(self, message: ImsgMessage) -> bool:
         """Return True if the row is now buffered (handled later by `flush`)."""
         chat_guid = message.chat_guid
-        if message.is_from_me or not message.is_group or not chat_guid:
-            return False  # echo guard; the bot only serves group chats
+        if not message.is_group or not chat_guid:
+            return False  # the bot only serves group chats
+        if message.is_from_me:
+            if self._self_handle is None or self._is_echo(chat_guid, message):
+                return False  # echo guard
+            message = message.model_copy(update={"sender": self._self_handle})
         text = (message.text or "").strip()
         command = None if message.is_reaction else parse_command(text)
         if command is not None:
@@ -343,10 +354,28 @@ class Relay:
     def _trip_url(self, trip_id: str) -> str:
         return f"{self._web_base_url}/t/{trip_id}"
 
+    def _is_echo(self, chat_guid: str, message: ImsgMessage) -> bool:
+        if message.is_reaction:
+            return False  # the relay never sends tapbacks
+        now = self._clock()
+        self._sent = [sent for sent in self._sent if sent[0] > now]
+        text = (message.text or "").strip()
+        for _, sent_chat, sent_text in self._sent:
+            if sent_chat != chat_guid:
+                continue
+            # Messages may split a link out of the reply into its own row.
+            if text == sent_text or (text.startswith("http") and text in sent_text):
+                return True
+        return False
+
     async def _reply(self, chat_guid: str, text: str) -> None:
         if self.sender is None:
             logger.warning("imsg is not running; reply dropped")
             return
+        if self._self_handle is not None:
+            text = SELF_REPLY_PREFIX + text
+            # Record before sending: the echo row can arrive before `send` returns.
+            self._sent.append((self._clock() + ECHO_SECONDS, chat_guid, text))
         try:
             await self.sender.send(chat_guid, text)
         except (ImsgError, ImsgClosed) as exc:
@@ -417,6 +446,7 @@ async def _serve(settings: RelaySettings) -> None:
         web_base_url=settings.web_base_url,
         flush_seconds=settings.relay_flush_seconds,
         flush_max=settings.relay_flush_max,
+        self_handle=settings.relay_self_handle,
     )
     try:
         await relay.run([settings.imsg_bin, "rpc"])

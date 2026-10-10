@@ -100,6 +100,21 @@ async def test_post_batch_serializes_messages():
     }
 
 
+@pytest.mark.parametrize(
+    ("raw", "sent"),
+    [("  Sam  ", "Sam"), ("   ", None), ("", None), ("x" * 80, "x" * 60)],
+)
+def test_batch_display_name_fits_the_backend_limits(raw, sent):
+    message = BatchMessage(
+        guid="g1",
+        handle="+15550001111",
+        display_name=raw,
+        sent_at=datetime(2026, 10, 17, 9, 30, tzinfo=UTC),
+        text="hi",
+    )
+    assert message.display_name == sent
+
+
 async def test_post_reactions():
     client, requests = client_for(lambda r: httpx.Response(200, json={"applied": 1, "skipped": 0}))
     reaction = Reaction(handle="+15550001111", target_guid="g1", kind="love", added=True)

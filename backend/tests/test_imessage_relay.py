@@ -469,6 +469,90 @@ async def test_unknown_command_gets_usage_help(relay, api, sender):
     assert "@questline build" in help_text and "@questline add" in help_text
 
 
+# Self-account mode: the relay runs on a member's own Apple ID (RELAY_SELF_HANDLE)
+
+ME = "+15559998888"
+PREFIX = "🧭 Questline: "
+
+
+@pytest.fixture
+def self_relay(api, sender, clock, state_path) -> Relay:
+    return Relay(
+        api=api,
+        sender=sender,
+        state=RelayState(),
+        state_path=state_path,
+        web_base_url="https://questline.test/",
+        flush_seconds=15,
+        flush_max=20,
+        clock=clock,
+        sleep=no_sleep,
+        self_handle=ME,
+    )
+
+
+def mine(rowid: int, text: str | None = "I vote Nepenthe", **fields) -> ImsgMessage:
+    return row(rowid, text, is_from_me=True, sender="", sender_name=None, **fields)
+
+
+async def test_own_messages_are_forwarded_under_the_self_handle(self_relay, api, clock):
+    linked(api)
+    await self_relay.handle(mine(1))
+    clock.now += 15
+    await self_relay.flush()
+    [(_, [message])] = api.batches
+    assert (message.handle, message.text, message.display_name) == (ME, "I vote Nepenthe", None)
+
+
+async def test_own_tapbacks_count_as_votes(self_relay, api):
+    linked(api)
+    await self_relay.handle(
+        mine(2, text=None, is_reaction=True, reaction_type="like", reacted_to_guid="guid-1")
+    )
+    await self_relay.flush()
+    assert api.reactions == [
+        (TRIP_ID, [Reaction(handle=ME, target_guid="guid-1", kind="like", added=True)])
+    ]
+
+
+async def test_own_commands_run_and_replies_are_prefixed(self_relay, api, sender):
+    linked(api)
+    await self_relay.handle(mine(1, text="@questline add nepenthe"))
+    assert replies(sender) == [f"{PREFIX}Added Nepenthe · https://questline.test/t/abc123"]
+
+
+async def test_echoes_of_the_relays_own_replies_are_dropped(self_relay, api, sender, clock):
+    linked(api)
+    await self_relay.handle(mine(1, text="@questline add nepenthe"))
+    [reply] = replies(sender)
+    await self_relay.handle(mine(2, text=reply))
+    # Messages can split a link into its own row; that is an echo too.
+    await self_relay.handle(mine(3, text="https://questline.test/t/abc123"))
+    clock.now += 15
+    await self_relay.flush()
+    assert api.batches == []
+
+
+async def test_echo_memory_expires(self_relay, api, sender, clock):
+    linked(api)
+    await self_relay.handle(mine(1, text="@questline add nepenthe"))
+    [reply] = replies(sender)
+    clock.now += 301
+    await self_relay.handle(mine(2, text=reply))
+    clock.now += 15
+    await self_relay.flush()
+    assert [m.guid for _, messages in api.batches for m in messages] == ["guid-2"]
+
+
+async def test_dedicated_bot_mode_still_ignores_its_own_account(relay, api, sender, clock):
+    linked(api)
+    await relay.handle(mine(1, text="@questline add nepenthe"))
+    await relay.handle(mine(2))
+    clock.now += 15
+    await relay.flush()
+    assert (api.batches, sender.sent) == ([], [])
+
+
 # Supervisor loop against the fake imsg process
 
 

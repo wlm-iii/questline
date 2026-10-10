@@ -228,7 +228,8 @@ against `imsg` is still required. Handles persist as separate trip members, repl
 context as evidence (not guessed votes), and repeated tapbacks set rather than toggle votes.
 Reactions targeting unresolved or multi-place messages are skipped; resend after extraction.
 
-On the relay Mac (macOS 14+, Messages.app signed into the bot Apple ID):
+On the relay Mac (macOS 14+, Messages.app signed into either a dedicated bot Apple ID or, in
+self-account mode, a team member's own Apple ID):
 
 1. `brew install steipete/tap/imsg`, then `imsg --version`.
 2. In System Settings → Privacy & Security, give the terminal that runs the relay **Full Disk
@@ -245,6 +246,13 @@ On the relay Mac (macOS 14+, Messages.app signed into the bot Apple ID):
 | `RELAY_STATE_PATH` | `~/.questline/imessage-relay.json` | Watch cursor, chat → trip links, `I'm <name>` names |
 | `RELAY_FLUSH_SECONDS` | `15` | Max seconds a message waits before its batch is sent |
 | `RELAY_FLUSH_MAX` | `20` | Messages per batch |
+| `RELAY_SELF_HANDLE` | unset | Self-account mode: the owner's phone or email (see below) |
+
+**Self-account mode.** With `RELAY_SELF_HANDLE` set, the relay runs on a member's own Apple ID:
+their messages and tapbacks (from the Mac or their phone) count as theirs, echoes of the relay's
+replies are ignored, and replies start with "🧭 Questline:". Keep "Start new conversations from"
+on the same handle on the phone and the Mac. Without it, the relay assumes a dedicated bot ID and
+ignores everything sent from its own account.
 
 Delivery is at least once. The saved cursor never moves past an unsent row, and the backend
 dedupes by message `guid`. Logs carry row IDs and counts, never message text.

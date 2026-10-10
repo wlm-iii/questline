@@ -36,3 +36,13 @@ def test_state_path_expands_the_home_directory(monkeypatch):
     monkeypatch.setenv("WEB_BASE_URL", "https://questline.test")
     monkeypatch.setenv("RELAY_STATE_PATH", "~/relay.json")
     assert RelaySettings(_env_file=None).relay_state_path == Path.home() / "relay.json"
+
+
+def test_self_handle_is_optional(monkeypatch):
+    monkeypatch.setenv("QUESTLINE_API_URL", "https://api.questline.test")
+    monkeypatch.setenv("API_TOKEN", "relay-token")
+    monkeypatch.setenv("WEB_BASE_URL", "https://questline.test")
+    monkeypatch.delenv("RELAY_SELF_HANDLE", raising=False)
+    assert RelaySettings(_env_file=None).relay_self_handle is None
+    monkeypatch.setenv("RELAY_SELF_HANDLE", "+15559998888")
+    assert RelaySettings(_env_file=None).relay_self_handle == "+15559998888"
