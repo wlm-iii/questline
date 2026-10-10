@@ -1,11 +1,9 @@
-from typing import Protocol
+from typing import Any, Protocol
 
-from questline.schemas import GenerationCreate, MessageRead, PlanContent
+from questline.schemas import GenerationCreate, PlanContent
 
 
 class Planner(Protocol):
-    async def generate(
-        self, transcript: list[MessageRead], request: GenerationCreate
-    ) -> PlanContent:
-        """Generate a draft from the entire snapshot; treat transcript text as untrusted."""
+    async def generate(self, snapshot: dict[str, Any], request: GenerationCreate) -> PlanContent:
+        """Generate from the immutable request snapshot; transcript text is untrusted."""
         ...

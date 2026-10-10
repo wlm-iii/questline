@@ -369,15 +369,16 @@ empty.
    unavailable. Detours are local to their leg and are not additive. Search-along-route results are
    candidates, not a substitute for this calculation.
 7. Code computes the estimate, conflicts, warnings, and `changed_from_previous`, validates the
-   final JSON, and atomically saves a `ready` plan plus the trip's `current_plan_id` and preset.
-   Capture a snapshot of messages, places, votes, and members at job start; later activity does not
-   silently modify that plan.
+   final JSON, and atomically saves a `draft` plan plus the trip's `current_plan_id` and preset.
+   Capture a snapshot of messages, places, votes, members, and the requested preset at request time,
+   in the same transaction that enqueues the job; later activity does not silently modify that plan.
 
 ### Edits: operations and recompute
 
 The UI never sends full plan content. It sends `POST /plans/{id}/operations {revision,
-operations: [...]}`. The server checks the revision (409 on mismatch), applies the operations to the
-**decision** fields, recomputes every **derived** field, saves, bumps the revision, sets status back
+operations: [...]}`. Each operation uses an `op` discriminator, for example
+`{"op": "set_quest", "node_id": "place-uuid", "quest": "main"}`. The server checks the revision
+(409 on mismatch), applies the operations to the **decision** fields, recomputes every **derived** field, saves, bumps the revision, sets status back
 to `draft`, and returns the full plan.
 
 | Operation | Fields | Effect |
@@ -446,7 +447,8 @@ backend validates on every write).
 - **trips:** `id` (random, unguessable text), `name`, `origin`, `destination` (each
   `{label, google_place_id, lat, lng}`), `start_date`, `end_date`, `timezone` (IANA),
   `budget_preset` (`shoestring|comfortable|treat`, default `comfortable`), `current_plan_id`
-  (nullable; only a ready plan from this trip), `revision` (int, bumps on any write),
+  (nullable; only a successfully generated draft or accepted plan from this trip),
+  `revision` (int, bumps on any write),
   `unresolved_mentions` (jsonb list of `{mention_text, message_ids}`), `discord_channel_id`
   (nullable), `imessage_chat_guid` (nullable, unique; the linked group, e.g.
   `iMessage;+;chat0000`), `created_at`.
@@ -529,8 +531,9 @@ Rules:
 - Create-trip origin and destination are text; the backend resolves them to the §9 objects before
   returning. `timezone` is required, defaulted in the UI from the browser's IANA zone and shown for
   confirmation. Reject ambiguous endpoints with 422 (Harden; Build uses the top result and shows
-  the resolved label). Trip creation may wait for these lookups; everything else returns before
-  Google or Gemini calls.
+  the resolved label). Trip creation, single-waypoint lookup, and resolution suggestions are
+  synchronous and may wait for bounded Google/Gemini calls. Imports and builds enqueue jobs and
+  return before provider calls.
 - Names are trimmed, 1–60 characters; trip names 1–100; imported text ≤ 100,000 characters total
   per trip (413 on overflow, never silent truncation); messages 1–10,000 characters. Dates are ISO
   dates with `end_date ≥ start_date`, at most three inclusive days, and one valid time zone.

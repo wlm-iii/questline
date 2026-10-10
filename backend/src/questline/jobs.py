@@ -25,6 +25,8 @@ def create_queue(settings: Settings, sessions: async_sessionmaker[AsyncSession])
 
     @app.task(name="questline.generate_plan", queue="plans")
     async def generate_task(generation_id: str) -> None:
+        if settings.planner_provider != "fake":
+            raise RuntimeError("Gemini provider has not been implemented")
         await generate_plan(UUID(generation_id), sessions, FakePlanner())
 
     return app, generate_task
