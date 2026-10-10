@@ -18,6 +18,8 @@ class RelaySettings(BaseSettings):
     )
     relay_flush_seconds: float = Field(default=15, gt=0)
     relay_flush_max: int = Field(default=20, ge=1, le=500)
+    # Set when the relay runs on a member's own Apple ID instead of a dedicated bot account.
+    relay_self_handle: str | None = None
 
     @field_validator("relay_state_path")
     @classmethod
