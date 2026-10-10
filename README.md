@@ -196,6 +196,31 @@ For non-default endpoints or tokens, set `BASE_URL` and `API_TOKEN` in the comma
 The script does not read `.env` automatically. It creates synthetic data, polls the generation,
 edits the resulting draft, and confirms that a stale edit is rejected.
 
+### Seed a demo trip
+
+`scripts/seed_demo.py` fills the app with a realistic trip from `demo/trip.json`. It creates the
+trip, joins members, imports the chat, adds places by search, casts votes and builds a plan, all
+through the public API. From `backend/`, with the API and worker running:
+
+```sh
+uv run python scripts/seed_demo.py ../demo/trip.json
+```
+
+It prints the waypoints found, each mention it **couldn't place** (an extraction miss worth
+fixing), each member's `X-Member-Token`, and the trip link. Other options:
+
+```sh
+# Seed into an existing trip without building (safe to rerun; existing votes are kept)
+uv run python scripts/seed_demo.py ../demo/trip.json --trip <trip id> --skip-build
+# Against another backend
+BASE_URL=https://api.example.com API_TOKEN=... uv run python scripts/seed_demo.py ../demo/trip.json
+```
+
+`--web` (or `WEB_BASE_URL`) sets the host used in the printed link. To try a different chat, copy
+`demo/trip.json` and edit it: `members` join the trip, `chat` uses `Name: text` lines, `votes`
+match a waypoint by name (`in`, `ok` or `out`), and `build` is optional. On the fake providers
+only McWay Falls and Big Sur Bakery resolve.
+
 The same endpoints are available interactively at `/docs`; schemas use **snake_case** JSON fields.
 Each new generation request requires an `Idempotency-Key` header; reuse it only to retry that request.
 Same-preset requests return any active trip build; a different preset returns 409. Snapshots are
