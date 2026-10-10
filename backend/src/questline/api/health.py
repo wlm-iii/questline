@@ -8,14 +8,14 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health/live")
-async def live() -> dict[str, str]:
-    return {"status": "ok"}
+async def live() -> dict[str, bool]:
+    return {"ok": True}
 
 
 @router.get("/health/ready")
-async def ready(session: SessionDep) -> dict[str, str]:
+async def ready(session: SessionDep) -> dict[str, bool]:
     try:
         await session.execute(text("SELECT 1"))
     except SQLAlchemyError as exc:
         raise HTTPException(503, "Database unavailable") from exc
-    return {"status": "ok"}
+    return {"ok": True}

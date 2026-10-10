@@ -46,6 +46,7 @@ class BatchMessage(_Outgoing):
     display_name: str | None = None
     sent_at: AwareDatetime
     text: str = Field(min_length=1, max_length=10_000)
+    reply_to_guid: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class Reaction(_Outgoing):

@@ -167,6 +167,7 @@ class Relay:
                 display_name=self.state.names.get(message.sender) or message.sender_name,
                 sent_at=message.created_at,
                 text=text,
+                reply_to_guid=message.thread_originator_guid,
             ),
         )
         return True

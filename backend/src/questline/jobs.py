@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from questline.config import Settings, get_settings
 from questline.db import create_database
 from questline.providers.fake import FakePlanner
+from questline.services.extraction import extract_places
 from questline.services.plan_generation import generate_plan
 
 
@@ -25,9 +26,15 @@ def create_queue(settings: Settings, sessions: async_sessionmaker[AsyncSession])
 
     @app.task(name="questline.generate_plan", queue="plans")
     async def generate_task(generation_id: str) -> None:
+        if settings.planner_provider != "fake":
+            raise RuntimeError("Gemini provider has not been implemented")
         await generate_plan(UUID(generation_id), sessions, FakePlanner())
 
-    return app, generate_task
+    @app.task(name="questline.extract_places", queue="plans")
+    async def extract_task(import_id: str) -> None:
+        await extract_places(UUID(import_id), sessions)
+
+    return app, generate_task, extract_task
 
 
 async def install_queue_schema(settings: Settings) -> None:
@@ -47,7 +54,7 @@ async def run(command: str) -> None:
         await install_queue_schema(settings)
         return
     engine, sessions = create_database(settings)
-    app, _ = create_queue(settings, sessions)
+    app, _, _ = create_queue(settings, sessions)
     try:
         async with app.open_async():
             await app.run_worker_async(queues=["plans"], concurrency=2)
