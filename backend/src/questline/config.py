@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     database_url: SecretStr = SecretStr("postgresql://questline:questline@localhost:5432/questline")
     api_token: SecretStr = SecretStr(LOCAL_API_TOKEN)
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
-    planner_provider: Literal["fake"] = "fake"
+    planner_provider: Literal["fake", "gemini"] = "fake"
+    maps_provider: Literal["fake", "google"] = "fake"
+    gemini_model: str | None = None
+    run_worker_in_process: bool = False
     gemini_api_key: SecretStr | None = None
     google_maps_api_key: SecretStr | None = None
     max_transcript_chars: int = Field(default=100_000, ge=1)

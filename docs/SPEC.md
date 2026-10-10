@@ -369,15 +369,16 @@ empty.
    unavailable. Detours are local to their leg and are not additive. Search-along-route results are
    candidates, not a substitute for this calculation.
 7. Code computes the estimate, conflicts, warnings, and `changed_from_previous`, validates the
-   final JSON, and atomically saves a `ready` plan plus the trip's `current_plan_id` and preset.
-   Capture a snapshot of messages, places, votes, and members at job start; later activity does not
-   silently modify that plan.
+   final JSON, and atomically saves a `draft` plan plus the trip's `current_plan_id` and preset.
+   Capture a snapshot of messages, places, votes, members, and the requested preset at request time,
+   in the same transaction that enqueues the job; later activity does not silently modify that plan.
 
 ### Edits: operations and recompute
 
 The UI never sends full plan content. It sends `POST /plans/{id}/operations {revision,
-operations: [...]}`. The server checks the revision (409 on mismatch), applies the operations to the
-**decision** fields, recomputes every **derived** field, saves, bumps the revision, sets status back
+operations: [...]}`. Each operation uses an `op` discriminator, for example
+`{"op": "set_quest", "node_id": "place-uuid", "quest": "main"}`. The server checks the revision
+(409 on mismatch), applies the operations to the **decision** fields, recomputes every **derived** field, saves, bumps the revision, sets status back
 to `draft`, and returns the full plan.
 
 | Operation | Fields | Effect |
@@ -446,7 +447,8 @@ backend validates on every write).
 - **trips:** `id` (random, unguessable text), `name`, `origin`, `destination` (each
   `{label, google_place_id, lat, lng}`), `start_date`, `end_date`, `timezone` (IANA),
   `budget_preset` (`shoestring|comfortable|treat`, default `comfortable`), `current_plan_id`
-  (nullable; only a ready plan from this trip), `revision` (int, bumps on any write),
+  (nullable; only a successfully generated draft or accepted plan from this trip),
+  `revision` (int, bumps on any write),
   `unresolved_mentions` (jsonb list of `{mention_text, message_ids}`), `discord_channel_id`
   (nullable), `imessage_chat_guid` (nullable, unique; the linked group, e.g.
   `iMessage;+;chat0000`), `created_at`.
@@ -457,11 +459,13 @@ backend validates on every write).
 - **messages:** `id` (uuid), `trip_id`, `external_id` (for iMessage: the message `guid`),
   `author_id` (string; the name as written, or the iMessage handle), `member_id` (nullable; set
   when the author maps to a member), `sent_at` (tz-aware), `text` (≤ 10,000 chars), `source`
-  (`import|web|discord|imessage`), `import_id` (nullable). Unique on `(trip_id, external_id)`.
-  Order by `(sent_at, id)`. Bot commands (`@questline …`) are not stored or extracted.
+  (`import|web|discord|imessage`), `import_id` (nullable), `reply_to_guid` (nullable original
+  parent GUID), `reply_to_id` (nullable parent message UUID, resolved only within the trip).
+  Unique on `(trip_id, external_id)`. Order by `(sent_at, id)`. Bot commands (`@questline …`) are not stored or extracted.
 - **imports:** `id` (uuid), `trip_id`, `member_id` (nullable for relay batches), `source`
-  (`paste|imessage`), `status` (`queued|running|succeeded|failed`), `message_count`, `error`
-  (nullable), `created_at`. Each relay flush (§11.1) is one import, so `extract_places` works the
+  (`paste|imessage`), `status` (`queued|running|succeeded|failed`), `message_count`,
+  `message_ids` (JSONB list of imported message UUIDs, including deduplicated redeliveries),
+  `error` (nullable), `created_at`. Each relay flush (§11.1) is one import, so `extract_places` works the
   same for pasted and live messages.
 - **places** (waypoints): `id` (uuid), `trip_id`, `google_place_id`, `name`, `category`
   (`eat|do|stay|along_the_way`), `address`, `lat`, `lng`, `google_maps_uri`, `price_level`
@@ -520,17 +524,18 @@ the source of truth for payload schemas.
 | POST | `/trips/{trip_id}/channels/imessage` | `{chat_guid}` (Bearer only) | 200 `{trip}`; 409 if the chat is linked to another trip |
 | DELETE | `/trips/{trip_id}/channels/imessage` | — (Bearer only) | 204; stops ingestion, keeps existing data |
 | GET | `/channels/imessage/{chat_guid}` | — (Bearer only) | 200 `{trip_id}`; 404 if unlinked (relay cache warm-up) |
-| POST | `/trips/{trip_id}/imessage/batch` | `{messages: [{guid, handle, display_name?, sent_at, text}]}` (Bearer only) | 202 `{import_id, inserted}`; upserts members by handle, inserts messages, enqueues `extract_places` |
+| POST | `/trips/{trip_id}/imessage/batch` | `{messages: [{guid, handle, display_name?, sent_at, text, reply_to_guid?}]}` (Bearer only) | 202 `{import_id, inserted}`; upserts members by handle, inserts messages, enqueues `extract_places` |
 | POST | `/trips/{trip_id}/imessage/reactions` | `{reactions: [{handle, target_guid, kind: love\|like\|dislike, added}]}` (Bearer only) | 200 `{applied, skipped}` |
-| PATCH | `/trips/{trip_id}/imessage/members/{handle}` | `{name}` (Bearer only; **proposed**, see §11.1) | 200 `{member}`; 404 if no member has that handle yet |
+| PATCH | `/trips/{trip_id}/imessage/members/{handle}` | `{name}` (Bearer only; see §11.1) | 200 `{member}`; 404 if no member has that handle yet |
 
 Rules:
 
 - Create-trip origin and destination are text; the backend resolves them to the §9 objects before
   returning. `timezone` is required, defaulted in the UI from the browser's IANA zone and shown for
   confirmation. Reject ambiguous endpoints with 422 (Harden; Build uses the top result and shows
-  the resolved label). Trip creation may wait for these lookups; everything else returns before
-  Google or Gemini calls.
+  the resolved label). Trip creation, single-waypoint lookup, and resolution suggestions are
+  synchronous and may wait for bounded Google/Gemini calls. Imports and builds enqueue jobs and
+  return before provider calls.
 - Names are trimmed, 1–60 characters; trip names 1–100; imported text ≤ 100,000 characters total
   per trip (413 on overflow, never silent truncation); messages 1–10,000 characters. Dates are ISO
   dates with `end_date ≥ start_date`, at most three inclusive days, and one valid time zone.
@@ -673,14 +678,13 @@ with "🧭 Questline:" so the group can tell them apart. A dedicated bot Apple I
 6. Inline replies (`thread_originator_guid`) are stored like any message; when the parent mentions
    a place, the reply counts as evidence for that place. No separate thread UI.
 
-**Contract gaps found while building the relay** (backend lead to confirm):
+**Relay/backend contracts:**
 
-- `@questline I'm <name>` needs a way to rename a member by handle. Proposed:
-  `PATCH /trips/{trip_id}/imessage/members/{handle}` (§10). The relay calls it, treats 404 as
-  "no member yet", and sends the chosen name as `display_name` on that sender's later batches.
-- Step 6 needs the parent message: the `imessage/batch` payload has no thread field. Proposed:
-  optional `reply_to_guid` per message. The relay will send it once the backend accepts it (the
-  batch schema rejects unknown fields today).
+- `@questline I'm <name>` uses `PATCH /trips/{trip_id}/imessage/members/{handle}` (§10).
+  The relay treats 404 as "no member yet" and sends the chosen name as `display_name` on later batches.
+- `imessage/batch` accepts optional `reply_to_guid`, forwarded from `thread_originator_guid`.
+  Persist it and resolve the parent only within the same trip, including out-of-order arrivals.
+  A reply to a single-place message is evidence for that place; it never becomes an inferred vote.
 - `@questline import last N` and the `ChatAdapter` (`fetch_transcript`/`post_plan_link`) wrapper
   are deferred with the §18 decision; the relay sends through `imsg rpc` directly.
 

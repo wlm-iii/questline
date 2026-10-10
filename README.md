@@ -15,7 +15,8 @@ The product and implementation spec is in [docs/SPEC.md](docs/SPEC.md).
 - **Procrastinate** for durable PostgreSQL-backed background jobs; no Redis required.
 - **uv** for dependencies, **pytest / Ruff / Pyright** for checks, GitHub Actions for CI.
 
-The scaffold implements transcript ingestion → background generation → editable draft → acceptance.
+The scaffold implements trip creation/joining → transcript ingestion → background generation →
+editable draft → acceptance, with member-token access and revision-based trip polling.
 **Generation is deterministic mock output, not AI.** Gemini, Google Maps, chat-platform adapters,
 the interactive editor/frontend integration, and per-user authorization remain team work items.
 No paid APIs are called.
@@ -64,7 +65,11 @@ This starts PostgreSQL, applies migrations, and runs the API and worker. Open:
 - Database connectivity: <http://localhost:8000/health/ready>
 
 In Swagger's **Authorize** dialog, enter `local-development-only` as the bearer token.
-All `/api/v1` routes require it. This is a **local/demo shared token**, not user authentication.
+The service token is for tooling/bots only. Create/join routes are public and return a member token;
+use `X-Member-Token` for trip-scoped browser access. Never ship `API_TOKEN` in a frontend bundle.
+Full plan replacement (`PATCH`) requires the service token; browser operations remain to be built.
+In fake Maps mode, create trips using `San Jose, CA` and `Big Sur, CA` as endpoints—these are
+explicit fixtures, not Google-verified results.
 The Compose ports bind to localhost. Do not expose this development configuration publicly.
 
 Compose intentionally uses its **local database**, not `backend/.env` or Supabase. No `.env` is
@@ -147,7 +152,8 @@ uv run python -m questline.jobs schema
 uv run uvicorn questline.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-In a second terminal, from `backend/`:
+For a single-process private demo, set `RUN_WORKER_IN_PROCESS=true` and do not launch a separate
+worker. Work still uses the durable PostgreSQL queue. Otherwise, in a second terminal from `backend/`:
 
 ```sh
 uv run python -m questline.jobs worker
@@ -155,8 +161,9 @@ uv run python -m questline.jobs worker
 
 Application and queue tables live in the private **`questline` schema**. Do **not** add it to
 Supabase's exposed API schemas or grant browser/anonymous roles access. All clients use FastAPI.
-The shared token grants access to all scaffold data: use synthetic conversations only until real
-identity, membership authorization, and retention/deletion controls are implemented.
+The service token grants access to all data. Member tokens are scoped to a single trip, but anyone
+with a trip link can join by name. Use synthetic conversations; this is not private/account-based
+identity, and retention/deletion controls are still pending.
 
 Supabase hosts **only the database** in this setup. Deploy the API and worker separately as
 long-running Python processes or containers. Inject secrets through your hosting provider; never
@@ -191,6 +198,22 @@ edits the resulting draft, and confirms that a stale edit is rejected.
 
 The same endpoints are available interactively at `/docs`; schemas use **snake_case** JSON fields.
 Each new generation request requires an `Idempotency-Key` header; reuse it only to retry that request.
+Same-preset requests return any active trip build; a different preset returns 409. Snapshots are
+captured at request time, and successful generations create `draft` plans. Responses use
+`{generation}` / `{plan}` envelopes and errors use `{error: {code, message}}`.
+
+Existing databases need `uv run alembic upgrade head`: the alignment migration renames
+`conversations` to `trips`, preserves messages/plans, and converts transcript snapshots. Legacy trips
+can retain missing endpoints/dates; new creation requests require the spec fields. Drain old queued
+jobs before upgrading because their task payload now expects the new snapshot schema.
+
+`PLANNER_PROVIDER=gemini` and `MAPS_PROVIDER=google` are recognized but return 503 for the relevant
+requests until real adapters land. Fake planning currently returns an explicitly empty draft;
+places, votes, imports, tasks, and check-ins are now persisted and returned by trip polling.
+Fake extraction recognizes `McWay Falls` / `Big Sur Bakery`; `Mystery Cafe` exercises unresolved
+mentions. Import `Name: text` lines via `/trips/{id}/import`, or add either fixture via
+`/trips/{id}/places`. Explicit votes and waypoint-keyed quest-log data survive rebuilds.
+Real extraction, routed planning, operations/recompute, and frontend API wiring remain work items.
 
 ## iMessage relay
 
@@ -199,9 +222,11 @@ with `API_TOKEN`. It reads the linked group through [`imsg`](https://github.com/
 (`imsg rpc`, JSON-RPC over stdio), batches messages to `/trips/{id}/imessage/batch`, posts tapback
 votes to `/trips/{id}/imessage/reactions`, and replies only to `@questline` commands.
 
-**Status:** the relay is implemented and unit-tested against a fake `imsg` and a fake API. The
-backend's `/trips`, `channels/imessage`, and `imessage/*` endpoints don't exist yet, so it can't
-run end to end until they land.
+**Status:** the relay and all backend channel/batch/reaction/rename endpoints are implemented.
+Tests exercise the real FastAPI endpoints and PostgreSQL with fake providers; a real-Mac test
+against `imsg` is still required. Handles persist as separate trip members, replies retain parent
+context as evidence (not guessed votes), and repeated tapbacks set rather than toggle votes.
+Reactions targeting unresolved or multi-place messages are skipped; resend after extraction.
 
 On the relay Mac (macOS 14+, Messages.app signed into either a dedicated bot Apple ID or, in
 self-account mode, a team member's own Apple ID):

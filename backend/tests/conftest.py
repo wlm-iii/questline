@@ -50,5 +50,5 @@ async def api(database_url):
             yield client, app
         async with await psycopg.AsyncConnection.connect(settings.psycopg_url) as connection:
             await connection.execute(
-                "TRUNCATE questline.conversations, questline.procrastinate_jobs CASCADE"
+                "TRUNCATE questline.trips, questline.procrastinate_jobs CASCADE"
             )
