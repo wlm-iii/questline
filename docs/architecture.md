@@ -37,7 +37,7 @@ rate limiting, and provider-specific payloads inside adapters.
 | `backend/src/questline/services/` | Planning orchestration independent of HTTP |
 | `backend/src/questline/jobs.py` | Queue wiring, worker entrypoint, queue schema bootstrap |
 | `backend/src/questline/providers/` | AI and Maps boundaries; deterministic mock planner |
-| `backend/src/questline/integrations/` | Future platform-specific chat adapters |
+| `backend/src/questline/integrations/` | Chat platform adapters; `imessage/` is the iMessage relay (SPEC §11.1) |
 | `backend/migrations/` | Versioned application schema migrations |
 
 ## API contract

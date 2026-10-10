@@ -192,6 +192,42 @@ edits the resulting draft, and confirms that a stale edit is rejected.
 The same endpoints are available interactively at `/docs`; schemas use **snake_case** JSON fields.
 Each new generation request requires an `Idempotency-Key` header; reuse it only to retry that request.
 
+## iMessage relay
+
+The silent iMessage bot (SPEC §11.1) is a relay process that runs on a team Mac and calls the API
+with `API_TOKEN`. It reads the linked group through [`imsg`](https://github.com/openclaw/imsg)
+(`imsg rpc`, JSON-RPC over stdio), batches messages to `/trips/{id}/imessage/batch`, posts tapback
+votes to `/trips/{id}/imessage/reactions`, and replies only to `@questline` commands.
+
+**Status:** the relay is implemented and unit-tested against a fake `imsg` and a fake API. The
+backend's `/trips`, `channels/imessage`, and `imessage/*` endpoints don't exist yet, so it can't
+run end to end until they land.
+
+On the relay Mac (macOS 14+, Messages.app signed into the bot Apple ID):
+
+1. `brew install steipete/tap/imsg`, then `imsg --version`.
+2. In System Settings → Privacy & Security, give the terminal that runs the relay **Full Disk
+   Access** and **Automation → Messages**. Reopen the terminal.
+3. `cp backend/.env.relay.example backend/.env.relay` and fill in the values.
+4. From `backend/`: `uv run python -m questline.integrations.imessage.relay`
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `QUESTLINE_API_URL` | required | API server root; the relay appends `/api/v1` |
+| `API_TOKEN` | required | Bearer token for the relay-only routes |
+| `WEB_BASE_URL` | required | Web app root for `/t/<trip_id>` links in replies |
+| `IMSG_BIN` | `imsg` | Path to the `imsg` binary |
+| `RELAY_STATE_PATH` | `~/.questline/imessage-relay.json` | Watch cursor, chat → trip links, `I'm <name>` names |
+| `RELAY_FLUSH_SECONDS` | `15` | Max seconds a message waits before its batch is sent |
+| `RELAY_FLUSH_MAX` | `20` | Messages per batch |
+
+Delivery is at least once. The saved cursor never moves past an unsent row, and the backend
+dedupes by message `guid`. Logs carry row IDs and counts, never message text.
+
+Manual check once the endpoints exist: `imsg chats --json` lists the test group;
+`@questline link <trip_id>` in the group posts the notice; a normal message reaches the trip
+within ~15 s; a ❤️ tapback on a message that names one place becomes an *I'm in* vote.
+
 ## Checks
 
 From `backend/`:
