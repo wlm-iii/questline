@@ -70,10 +70,13 @@ class Cursor:
         self._seen = resume_rowid
         self._pending: set[int] = set()
 
-    def begin(self, rowid: int) -> None:
-        if rowid > self._seen:
-            self._seen = rowid
-            self._pending.add(rowid)
+    def begin(self, rowid: int) -> bool:
+        """Start tracking a row; False if it was already seen (a watch replay)."""
+        if rowid <= self._seen:
+            return False
+        self._seen = rowid
+        self._pending.add(rowid)
+        return True
 
     def done(self, rowid: int) -> None:
         self._pending.discard(rowid)

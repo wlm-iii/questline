@@ -106,3 +106,10 @@ def test_cursor_ignores_rows_at_or_before_the_resume_point():
     cursor = Cursor(10)
     cursor.begin(9)
     assert cursor.safe_rowid == 10
+
+
+def test_cursor_reports_whether_a_row_is_new():
+    cursor = Cursor(10)
+    assert cursor.begin(11) is True
+    assert cursor.begin(11) is False
+    assert cursor.begin(3) is False
