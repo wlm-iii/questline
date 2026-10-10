@@ -165,7 +165,7 @@ trips). Everyone else votes and taps.
 3. Private budget max + one anonymous veto per person (needs a member-authorized design first).
 4. Live check-in: geolocation marks a quest complete when you arrive.
 5. Split-the-bill screen ("Alex paid $240 → each person's share + Venmo link").
-6. Discord bot that forwards channel messages into the trip (§11).
+6. Discord bot that forwards channel messages into the trip (§11.2).
 
 ### Not in the hackathon (later)
 
@@ -236,7 +236,8 @@ These are product rules, not nice-to-haves. The demo must never claim something 
 - The iMessage bot reads a group only after someone in it sends `@questline link`, and it then
   posts one visible notice saying it is reading the chat, that messages go to Google Gemini, and
   how to stop (`@questline unlink`). It never reads messages sent before the link unless someone
-  explicitly asks (`@questline import last N`). Tapback votes are attributed to the sender's
+  explicitly asks (`@questline import last N`), and even then it can only see messages sent after
+  the bot joined the group; older history needs the paste import. Tapback votes are attributed to the sender's
   handle, never guessed.
 
 ## 7. Tech stack
@@ -792,7 +793,7 @@ stack plus the recorded demo as fallbacks.
    quotes: "Nobody organized anything, and here's every place, on a map, with who said it."
    **With the iMessage bot:** mirror a phone showing the real group. Send `@questline link …`,
    then two teammates text normally ("we HAVE to hit McWay Falls"); pins drop on the projected map
-   within seconds. Someone ❤️s a message and the vote tally moves. End with `@questline build`
+   within ~30 seconds (15 s relay flush + extraction). Someone ❤️s a message and the vote tally moves. End with `@questline build`
    in the chat and the questline appearing on the map. Pasting stays as the fallback beat.
 3. **Vote (30 s):** two teammates vote on their phones. Tallies appear on markers. One waypoint
    turns contested (⚠).
