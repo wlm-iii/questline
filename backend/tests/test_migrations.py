@@ -36,6 +36,12 @@ def test_alignment_preserves_legacy_rows(database_url):
                 (trip_id, "A" * 150),
             )
             connection.execute(
+                """INSERT INTO questline.messages
+                   (id, conversation_id, external_id, author_id, sent_at, text)
+                   VALUES (%s, %s, 'legacy-1', 'Alice', '2026-10-10T12:00:00Z', 'Legacy text')""",
+                (transcript[0]["id"], trip_id),
+            )
+            connection.execute(
                 """INSERT INTO questline.plan_generations
                    (id, conversation_id, idempotency_key, transcript_revision, transcript,
                     instructions, timezone, status)
@@ -61,6 +67,9 @@ def test_alignment_preserves_legacy_rows(database_url):
             assert connection.execute(
                 "SELECT content FROM questline.plans WHERE id = %s", (plan_id,)
             ).fetchone() == (content,)
+            assert connection.execute(
+                "SELECT text, source FROM questline.messages WHERE trip_id = %s", (trip_id,)
+            ).fetchone() == ("Legacy text", "web")
         migrate("downgrade", "f8a6451f9eac")
         with psycopg.connect(database_url) as connection:
             assert connection.execute(

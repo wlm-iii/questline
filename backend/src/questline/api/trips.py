@@ -7,7 +7,19 @@ from sqlalchemy import select
 
 from questline.api.dependencies import AccessDep, SessionDep, SettingsDep, token_hash
 from questline.api.generations import generation_response
-from questline.models import Member, Message, Plan, PlanGeneration, Trip
+from questline.models import (
+    Checkin,
+    Import,
+    Member,
+    Message,
+    Place,
+    Plan,
+    PlanGeneration,
+    Task,
+    Trip,
+    Vote,
+)
+from questline.persistence_schemas import CheckinRead, ImportRead, PlaceRead, TaskRead, VoteRead
 from questline.providers.maps import FakeMaps
 from questline.schemas import (
     IngestResult,
@@ -15,12 +27,13 @@ from questline.schemas import (
     MemberCreate,
     MemberRead,
     MessageBatch,
-    MessageInput,
+    MessageRead,
     PlanRead,
     TripCreate,
     TripCreated,
     TripRead,
 )
+from questline.services.persistence import ingest, locked_trip
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 
@@ -91,14 +104,31 @@ async def get_trip(
         await session.scalars(select(PlanGeneration).where(PlanGeneration.trip_id == trip_id))
     ).all()
     plan = await session.get(Plan, trip.current_plan_id) if trip.current_plan_id else None
+    places = (await session.scalars(select(Place).where(Place.trip_id == trip_id))).all()
+    votes = (await session.scalars(select(Vote).where(Vote.trip_id == trip_id))).all()
+    tasks = (await session.scalars(select(Task).where(Task.trip_id == trip_id))).all()
+    checkins = (await session.scalars(select(Checkin).where(Checkin.trip_id == trip_id))).all()
+    imports = (await session.scalars(select(Import).where(Import.trip_id == trip_id))).all()
+    messages = (
+        await session.scalars(
+            select(Message).where(Message.trip_id == trip_id).order_by(Message.sent_at, Message.id)
+        )
+    ).all()
+    place_reads = [PlaceRead.model_validate(place) for place in places]
+    for place in place_reads:
+        for vote in votes:
+            if vote.place_id == place.id:
+                place.vote_tallies[vote.kind] += 1
+        place.contested = place.vote_tallies["in"] > 0 and place.vote_tallies["out"] > 0
     return {
         "trip": TripRead.model_validate(trip),
         "members": [MemberRead.model_validate(member) for member in members],
-        # Candidate/vote/task/checkin persistence is the next implementation slice.
-        "places": [],
-        "votes": [],
-        "tasks": [],
-        "checkins": [],
+        "places": place_reads,
+        "votes": [VoteRead.model_validate(vote) for vote in votes],
+        "tasks": [TaskRead.model_validate(task) for task in tasks],
+        "checkins": [CheckinRead.model_validate(checkin) for checkin in checkins],
+        "imports": [ImportRead.model_validate(imported) for imported in imports],
+        "messages": [MessageRead.model_validate(message) for message in messages],
         "current_plan": PlanRead.model_validate(plan) if plan else None,
         "jobs": [await generation_response(job, session) for job in jobs],
         "revision": trip.revision,
@@ -109,27 +139,14 @@ async def get_trip(
 async def ingest_messages(
     trip_id: UUID, body: MessageBatch, session: SessionDep, settings: SettingsDep, access: AccessDep
 ):
-    access.check_trip(trip_id)
-    trip = await session.get(Trip, trip_id, with_for_update=True)
-    if trip is None:
-        raise HTTPException(404, "Trip not found")
-    stored = (await session.scalars(select(Message).where(Message.trip_id == trip_id))).all()
-    by_external_id = {m.external_id: MessageInput.model_validate(m) for m in stored}
-    total_chars = sum(len(message.text) for message in stored)
-    inserted = 0
-    for message in body.messages:
-        previous = by_external_id.get(message.external_id)
-        if previous is not None:
-            if previous != message:
-                raise HTTPException(409, "Message ID already exists with different content")
-            continue
-        total_chars += len(message.text)
-        if total_chars > settings.max_transcript_chars:
-            raise HTTPException(413, "Transcript too large; messages were not imported")
-        session.add(Message(trip_id=trip_id, **message.model_dump()))
-        by_external_id[message.external_id] = message
-        inserted += 1
+    trip = await locked_trip(session, trip_id, access)
+    members = (
+        {message.author_id: access.member.id for message in body.messages} if access.member else {}
+    )
+    inserted = await ingest(
+        session, trip, body.messages, settings.max_transcript_chars, source="web", members=members
+    )
     if inserted:
         trip.revision += 1
     await session.commit()
-    return IngestResult(inserted=inserted, revision=trip.revision)
+    return IngestResult(inserted=len(inserted), revision=trip.revision)

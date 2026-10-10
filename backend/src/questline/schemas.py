@@ -19,6 +19,8 @@ class MemberCreate(Schema):
 class MemberRead(MemberCreate):
     id: UUID
     trip_id: UUID
+    imessage_handle: str | None = None
+    discord_user_id: str | None = None
 
 
 class Endpoint(Schema):
@@ -58,6 +60,8 @@ class TripRead(Schema):
     timezone: str
     budget_preset: BudgetPreset
     current_plan_id: UUID | None
+    imessage_chat_guid: str | None
+    unresolved_mentions: list[dict] = Field(default_factory=list)
     revision: int
     created_at: datetime
 
@@ -86,6 +90,11 @@ class MessageBatch(Schema):
 
 class MessageRead(MessageInput):
     id: UUID
+    member_id: UUID | None = None
+    source: str = "web"
+    import_id: UUID | None = None
+    reply_to_guid: str | None = None
+    reply_to_id: UUID | None = None
 
 
 class IngestResult(Schema):

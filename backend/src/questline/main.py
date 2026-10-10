@@ -6,7 +6,17 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException
 
-from questline.api import errors, generations, health, plans, trips
+from questline.api import (
+    errors,
+    follow_through,
+    generations,
+    health,
+    imessage,
+    imports,
+    plans,
+    trips,
+    waypoints,
+)
 from questline.config import Settings, get_settings
 from questline.db import create_database
 from questline.jobs import create_queue
@@ -15,7 +25,7 @@ from questline.jobs import create_queue
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     engine, sessions = create_database(settings)
-    queue, generate_task = create_queue(settings, sessions)
+    queue, generate_task, extract_task = create_queue(settings, sessions)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -41,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.sessions = sessions
     app.state.queue = queue
     app.state.generate_task = generate_task
+    app.state.extract_task = extract_task
     app.add_exception_handler(HTTPException, errors.http_error)
     app.add_exception_handler(RequestValidationError, errors.validation_error)
     app.add_middleware(
@@ -51,7 +62,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(health.router)
     app.include_router(health.router, prefix="/api/v1")
-    for router in (trips.router, generations.router, plans.router):
+    for router in (
+        trips.router,
+        generations.router,
+        plans.router,
+        waypoints.router,
+        imports.router,
+        imessage.router,
+        follow_through.router,
+    ):
         app.include_router(router, prefix="/api/v1")
     return app
 

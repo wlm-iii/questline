@@ -7,13 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from questline.api.dependencies import AccessDep, SessionDep, SettingsDep
-from questline.models import Member, Message, Plan, PlanGeneration, Trip
+from questline.models import Member, Message, Place, Plan, PlanGeneration, Trip, Vote
+from questline.persistence_schemas import PlaceRead, VoteRead
 from questline.schemas import (
     GenerationCreate,
     GenerationRead,
     GenerationResult,
     MemberRead,
     MessageRead,
+    TripRead,
 )
 
 router = APIRouter(tags=["generations"])
@@ -70,6 +72,16 @@ async def create_generation(
     if sum(len(m.text) for m in messages) > settings.max_transcript_chars:
         raise HTTPException(413, "Transcript exceeds the generation limit")
     members = (await session.scalars(select(Member).where(Member.trip_id == trip_id))).all()
+    places = (await session.scalars(select(Place).where(Place.trip_id == trip_id))).all()
+    votes = (await session.scalars(select(Vote).where(Vote.trip_id == trip_id))).all()
+    place_reads = [PlaceRead.model_validate(place) for place in places]
+    for place_read in place_reads:
+        for vote in votes:
+            if vote.place_id == place_read.id:
+                place_read.vote_tallies[vote.kind] += 1
+        place_read.contested = (
+            place_read.vote_tallies["in"] > 0 and place_read.vote_tallies["out"] > 0
+        )
     generation = PlanGeneration(
         trip_id=trip_id,
         idempotency_key=idempotency_key,
@@ -77,12 +89,14 @@ async def create_generation(
         snapshot={
             "messages": [MessageRead.model_validate(m).model_dump(mode="json") for m in messages],
             "members": [MemberRead.model_validate(m).model_dump(mode="json") for m in members],
-            "places": [],
-            "votes": [],
+            "places": [p.model_dump(mode="json") for p in place_reads],
+            "votes": [VoteRead.model_validate(v).model_dump(mode="json") for v in votes],
+            "trip": TripRead.model_validate(trip).model_dump(mode="json"),
             "budget_preset": body.budget_preset,
             "timezone": trip.timezone,
         },
         budget_preset=body.budget_preset,
+        requested_by=access.member.id if access.member else None,
         previous_plan_id=trip.current_plan_id,
     )
     session.add(generation)

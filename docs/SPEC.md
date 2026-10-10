@@ -459,11 +459,13 @@ backend validates on every write).
 - **messages:** `id` (uuid), `trip_id`, `external_id` (for iMessage: the message `guid`),
   `author_id` (string; the name as written, or the iMessage handle), `member_id` (nullable; set
   when the author maps to a member), `sent_at` (tz-aware), `text` (≤ 10,000 chars), `source`
-  (`import|web|discord|imessage`), `import_id` (nullable). Unique on `(trip_id, external_id)`.
-  Order by `(sent_at, id)`. Bot commands (`@questline …`) are not stored or extracted.
+  (`import|web|discord|imessage`), `import_id` (nullable), `reply_to_guid` (nullable original
+  parent GUID), `reply_to_id` (nullable parent message UUID, resolved only within the trip).
+  Unique on `(trip_id, external_id)`. Order by `(sent_at, id)`. Bot commands (`@questline …`) are not stored or extracted.
 - **imports:** `id` (uuid), `trip_id`, `member_id` (nullable for relay batches), `source`
-  (`paste|imessage`), `status` (`queued|running|succeeded|failed`), `message_count`, `error`
-  (nullable), `created_at`. Each relay flush (§11.1) is one import, so `extract_places` works the
+  (`paste|imessage`), `status` (`queued|running|succeeded|failed`), `message_count`,
+  `message_ids` (JSONB list of imported message UUIDs, including deduplicated redeliveries),
+  `error` (nullable), `created_at`. Each relay flush (§11.1) is one import, so `extract_places` works the
   same for pasted and live messages.
 - **places** (waypoints): `id` (uuid), `trip_id`, `google_place_id`, `name`, `category`
   (`eat|do|stay|along_the_way`), `address`, `lat`, `lng`, `google_maps_uri`, `price_level`
@@ -522,9 +524,9 @@ the source of truth for payload schemas.
 | POST | `/trips/{trip_id}/channels/imessage` | `{chat_guid}` (Bearer only) | 200 `{trip}`; 409 if the chat is linked to another trip |
 | DELETE | `/trips/{trip_id}/channels/imessage` | — (Bearer only) | 204; stops ingestion, keeps existing data |
 | GET | `/channels/imessage/{chat_guid}` | — (Bearer only) | 200 `{trip_id}`; 404 if unlinked (relay cache warm-up) |
-| POST | `/trips/{trip_id}/imessage/batch` | `{messages: [{guid, handle, display_name?, sent_at, text}]}` (Bearer only) | 202 `{import_id, inserted}`; upserts members by handle, inserts messages, enqueues `extract_places` |
+| POST | `/trips/{trip_id}/imessage/batch` | `{messages: [{guid, handle, display_name?, sent_at, text, reply_to_guid?}]}` (Bearer only) | 202 `{import_id, inserted}`; upserts members by handle, inserts messages, enqueues `extract_places` |
 | POST | `/trips/{trip_id}/imessage/reactions` | `{reactions: [{handle, target_guid, kind: love\|like\|dislike, added}]}` (Bearer only) | 200 `{applied, skipped}` |
-| PATCH | `/trips/{trip_id}/imessage/members/{handle}` | `{name}` (Bearer only; **proposed**, see §11.1) | 200 `{member}`; 404 if no member has that handle yet |
+| PATCH | `/trips/{trip_id}/imessage/members/{handle}` | `{name}` (Bearer only; see §11.1) | 200 `{member}`; 404 if no member has that handle yet |
 
 Rules:
 
@@ -668,14 +670,13 @@ No SIP changes and no IMCore injection.
 6. Inline replies (`thread_originator_guid`) are stored like any message; when the parent mentions
    a place, the reply counts as evidence for that place. No separate thread UI.
 
-**Contract gaps found while building the relay** (backend lead to confirm):
+**Relay/backend contracts:**
 
-- `@questline I'm <name>` needs a way to rename a member by handle. Proposed:
-  `PATCH /trips/{trip_id}/imessage/members/{handle}` (§10). The relay calls it, treats 404 as
-  "no member yet", and sends the chosen name as `display_name` on that sender's later batches.
-- Step 6 needs the parent message: the `imessage/batch` payload has no thread field. Proposed:
-  optional `reply_to_guid` per message. The relay will send it once the backend accepts it (the
-  batch schema rejects unknown fields today).
+- `@questline I'm <name>` uses `PATCH /trips/{trip_id}/imessage/members/{handle}` (§10).
+  The relay treats 404 as "no member yet" and sends the chosen name as `display_name` on later batches.
+- `imessage/batch` accepts optional `reply_to_guid`, forwarded from `thread_originator_guid`.
+  Persist it and resolve the parent only within the same trip, including out-of-order arrivals.
+  A reply to a single-place message is evidence for that place; it never becomes an inferred vote.
 - `@questline import last N` and the `ChatAdapter` (`fetch_transcript`/`post_plan_link`) wrapper
   are deferred with the §18 decision; the relay sends through `imsg rpc` directly.
 

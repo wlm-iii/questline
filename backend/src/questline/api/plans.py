@@ -5,8 +5,9 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from questline.api.dependencies import AccessDep, SessionDep
-from questline.models import Plan, Trip
+from questline.models import Message, Place, Plan, Trip
 from questline.schemas import PlanAccept, PlanRead, PlanResult, PlanUpdate
+from questline.services.persistence import same_trip_member
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 
@@ -38,6 +39,20 @@ async def edit_plan(plan_id: UUID, body: PlanUpdate, session: SessionDep, access
     plan, trip = await lock_plan(plan_id, session, access)
     if plan.revision != body.revision:
         raise HTTPException(409, "Plan changed; fetch the latest revision before editing")
+    for node in body.content.graph.nodes:
+        await same_trip_member(session, node.owner_member_id, trip.id)
+        for message_id in node.source_message_ids:
+            message = await session.get(Message, message_id)
+            if message is None or message.trip_id != trip.id:
+                raise HTTPException(422, "Evidence does not belong to the trip")
+        if node.role == "stop":
+            try:
+                place_id = UUID(node.id)
+            except ValueError as exc:
+                raise HTTPException(422, "Stop IDs must be local waypoint UUIDs") from exc
+            place = await session.get(Place, place_id)
+            if place is None or place.trip_id != trip.id or place.google_place_id != node.place_id:
+                raise HTTPException(422, "Stop does not match a waypoint in this trip")
     plan.content = body.content.model_dump(mode="json")
     plan.revision += 1
     plan.status = "draft"

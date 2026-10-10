@@ -66,9 +66,8 @@ Errors use `{error: {code, message}}`; conflict errors may also include `generat
 
 ### Jobs
 
-- Snapshots are captured **at request time**, not job start. They contain messages, members, preset,
-  timezone, and reserved `places`/`votes` lists. These lists are currently empty because waypoint and
-  vote persistence are not implemented; never describe them as a completed candidate pipeline.
+- Snapshots are captured **at request time**, not job start. They include actual persisted messages,
+  members, places, votes, preset, timezone, and trip context. Subsequent edits never mutate a snapshot.
 - Generation rows and queued jobs commit atomically on the same psycopg connection.
 - Conversation rows are now trips. Existing rows, messages, and plans migrate without deletion.
 - Per-trip queue locks serialize work. The trip row lock ensures requests find an active build:
@@ -82,8 +81,9 @@ Errors use `{error: {code, message}}`; conflict errors may also include `generat
 
 `Planner.generate(snapshot, request)` receives the complete immutable request snapshot.
 The fake planner intentionally returns an empty, clearly labeled draft, not invented resolved places.
-`FakeMaps` resolves only `San Jose, CA` and `Big Sur, CA`, using explicitly labeled fixture data.
-These are development fixtures, not Google-verified results.
+`FakeMaps` resolves endpoints `San Jose, CA` / `Big Sur, CA` and waypoint fixtures `McWay Falls` /
+`Big Sur Bakery`. `FakeExtractor` recognizes those waypoint names plus unresolved `Mystery Cafe`.
+These are explicitly labeled development fixtures, not Google-verified results.
 
 `PLANNER_PROVIDER=fake|gemini`, `MAPS_PROVIDER=fake|google`, and `GEMINI_MODEL` are recognized.
 Real provider adapters are not implemented: selecting them returns a clear 503 on relevant requests,
@@ -93,15 +93,48 @@ Plan schemas accept main/side roles, anchors, coordinates, travel/detour edges, 
 prices, conflicts, estimates, warnings, and change summaries. Basic graph references, cost ranges,
 and timestamps are checked. Full route feasibility and derived-field recomputation are **not** done.
 
+## Persistence and relay endpoints
+
+The `questline` schema now includes trips, members, messages, imports, places, votes,
+plan generations, plans, tasks, and check-ins. Place IDs and member IDs are checked against the trip
+on writes. Unique constraints prevent duplicate place IDs, votes, handles, and completion records;
+coordinate/price ranges have database checks. All state writes are serialized by a trip row lock.
+
+Additional implemented endpoints:
+
+- `POST /trips/{id}/import`: parse `Name: text` and indented continuation lines, persist messages,
+  enqueue extraction atomically, and report an import job in trip state. Synthetic paste timestamps
+  are stable ordering markers, not claimed original timestamps. Reimporting identical text does not
+  duplicate messages, evidence, or waypoints; it creates a new import job so failed extraction can retry.
+- `POST /trips/{id}/places`: resolve a fixture and upsert by local trip + provider place ID.
+- `POST /places/{id}/votes`: explicit member choice; choosing it again removes it. Service callers
+  supply `member_id`, whereas browser callers are always bound to their member token.
+- Task create/update and check-in create/delete endpoints from SPEC §10. Check-ins and tasks reference
+  waypoints, not plan revisions, so rebuilding preserves them.
+- All service-only iMessage link/lookup/unlink, batch, reaction, and rename endpoints now exist.
+  Members are upserted by `(trip_id, imessage_handle)`; display names never merge identities.
+- Messages preserve `reply_to_guid` and resolve `reply_to_id` within the trip, including out-of-order
+  parents. The relay now forwards this context. Replies become evidence for a single parent waypoint,
+  **not inferred votes**. Reactions explicitly set/remove votes and never toggle on redelivery.
+  Unresolved or multi-place targets are skipped; reactions arriving before extraction must be resent.
+
+Trip-state responses include `imports` and `messages` as well as the spec's other collections so the
+frontend can show job statuses and exact evidence quotes. Tallies and contested flags are derived
+from vote rows, not cached counters. Tokens/hashes are never serialized.
+
+Run `alembic upgrade head` before starting the new API/worker. Downgrading the persistence migration
+removes its new tables and is destructive; it refuses relay-only members that the older schema cannot
+represent. Back up any non-disposable database before changing schemas.
+
 ## Remaining Build work
 
-- Places/votes/imports/tasks/check-ins tables, endpoints, and populated trip-state collections.
-- Pasted-chat parsing, extraction, FakeExtractor, and Gemini/Google adapters.
+- Real Gemini extraction/planning and Google Maps adapters (fake extraction is wired end to end).
 - Planner selection contract `{main, side, why}` and code-owned routing/timing/estimate calculations.
 - `/operations` validation and recompute; grounded `/resolutions`.
 - API-driven seed script and demo chat (the smoke script tests only this foundation).
-- Frontend map, creation/join, polling, votes, editor, and quest log; the frontend is still Vite's starter.
-- iMessage relay and service-only channel/reaction endpoints.
+- Frontend map, creation/join, polling, votes, editor, and quest log; styled components exist but
+  are not connected to backend data.
+- Real-Mac iMessage end-to-end verification, historical import, and optional deferred reactions.
 - Frontend deployment and deployment manifests; actual Supabase/hosting resources are not created.
 
 Divide these by the four roles in SPEC §12. Extend schemas and migrations deliberately; tests

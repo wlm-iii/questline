@@ -209,8 +209,11 @@ jobs before upgrading because their task payload now expects the new snapshot sc
 
 `PLANNER_PROVIDER=gemini` and `MAPS_PROVIDER=google` are recognized but return 503 for the relevant
 requests until real adapters land. Fake planning currently returns an explicitly empty draft;
-place persistence, extraction, votes, operations/recompute, tasks, check-ins, and bots are still
-implementation work, not completed features.
+places, votes, imports, tasks, and check-ins are now persisted and returned by trip polling.
+Fake extraction recognizes `McWay Falls` / `Big Sur Bakery`; `Mystery Cafe` exercises unresolved
+mentions. Import `Name: text` lines via `/trips/{id}/import`, or add either fixture via
+`/trips/{id}/places`. Explicit votes and waypoint-keyed quest-log data survive rebuilds.
+Real extraction, routed planning, operations/recompute, and frontend API wiring remain work items.
 
 ## iMessage relay
 
@@ -219,9 +222,11 @@ with `API_TOKEN`. It reads the linked group through [`imsg`](https://github.com/
 (`imsg rpc`, JSON-RPC over stdio), batches messages to `/trips/{id}/imessage/batch`, posts tapback
 votes to `/trips/{id}/imessage/reactions`, and replies only to `@questline` commands.
 
-**Status:** the relay is implemented and unit-tested against a fake `imsg` and a fake API. The
-backend's `/trips`, `channels/imessage`, and `imessage/*` endpoints don't exist yet, so it can't
-run end to end until they land.
+**Status:** the relay and all backend channel/batch/reaction/rename endpoints are implemented.
+Tests exercise the real FastAPI endpoints and PostgreSQL with fake providers; a real-Mac test
+against `imsg` is still required. Handles persist as separate trip members, replies retain parent
+context as evidence (not guessed votes), and repeated tapbacks set rather than toggle votes.
+Reactions targeting unresolved or multi-place messages are skipped; resend after extraction.
 
 On the relay Mac (macOS 14+, Messages.app signed into the bot Apple ID):
 
