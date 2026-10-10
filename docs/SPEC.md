@@ -649,10 +649,18 @@ scaffold's `ChatAdapter` protocol (`fetch_transcript` = `imsg history`, `post_pl
 `imsg send`). It needs Full Disk Access and Automation → Messages for the terminal that runs it.
 No SIP changes and no IMCore injection.
 
+**Demo setup (decided 2026-10-10): self-account mode.** Apple wouldn't create a new bot Apple ID,
+so the relay runs on Max's MacBook and personal Apple ID with `RELAY_SELF_HANDLE` set to his
+handle. Rows "from me" are then either Max typing (from the Mac or his phone), which is forwarded
+as his messages and votes, or echoes of the relay's own replies, which are dropped. Replies start
+with "🧭 Questline:" so the group can tell them apart. A dedicated bot Apple ID (no
+`RELAY_SELF_HANDLE`) remains the cleaner setup when one is available.
+
 **Inbound.**
 
-1. `watch.subscribe` streams new rows with `--reactions`. Drop `is_from_me` rows (echo guard) and
-   rows from chats with no linked trip. Persist the last `rowid` locally and resume with
+1. `watch.subscribe` streams new rows with `--reactions`. Drop echoes and rows from chats with no
+   linked trip. With a dedicated bot ID every `is_from_me` row is an echo; in self-account mode
+   only `is_from_me` rows matching a reply sent to that chat in the last 5 minutes are. Persist the last `rowid` locally and resume with
    `--since-rowid` after a restart.
 2. Messages starting with `@questline` are commands (below) and are not forwarded for extraction.
 3. Other text messages are buffered per chat and flushed to `POST /trips/{id}/imessage/batch`
@@ -702,6 +710,8 @@ bot's own row come back through `watch`.
 - Every participant must be on iMessage; an SMS/Android member turns the group into MMS, which the
   email-only bot account can't join.
 - One Mac is a single point of failure: it must stay awake and online with Messages signed in.
+- In self-account mode the bot's replies come from Max's account (prefixed "🧭 Questline:"), and
+  the relay runs inside his personal Messages; it forwards only chats someone explicitly linked.
 - The bot sees only messages sent after it joined, and only reads them after `link`.
 - Names are phone numbers/emails unless the Mac's Contacts know them or members send `I'm <name>`.
 
@@ -790,7 +800,8 @@ single-process demo hosting).
 iMessage relay (env on the relay Mac only): `QUESTLINE_API_URL`, `API_TOKEN`, `WEB_BASE_URL`
 (for links in replies), `IMSG_BIN` (default `imsg`), `RELAY_STATE_PATH` (stores the last
 `rowid`, the chat → trip cache, and `I'm <name>` names), `RELAY_FLUSH_SECONDS` (default 15),
-`RELAY_FLUSH_MAX` (default 20). Put them in `backend/.env.relay` (template:
+`RELAY_FLUSH_MAX` (default 20), `RELAY_SELF_HANDLE` (optional; the owner's phone or email in
+self-account mode, §11.1). Put them in `backend/.env.relay` (template:
 `backend/.env.relay.example`).
 
 Never commit `.env` files. The frontend bundle contains only the browser Maps key and the API URL;
@@ -852,7 +863,9 @@ stack plus the recorded demo as fallbacks.
 - Vote labels and icons (*I'm in / Sure / Skip* assumed here).
 - iMessage bot priority: Must-have item 7 (assumed here) vs. Stretch, if it competes with
   *Resolve* or the quest log for time.
-- Who owns the iMessage relay, which MacBook runs it, and whose spare Apple ID is the fallback.
+- ~~Who owns the iMessage relay, which MacBook runs it, and whose spare Apple ID is the fallback.~~
+  Decided 2026-10-10: Max owns the relay; it runs on his MacBook and Apple ID in self-account
+  mode (§11.1). A spare bot Apple ID is still welcome if a teammate has one.
 - Bot command prefix (`@questline` assumed) and display name in the group.
 - Whether the bot ever posts unprompted (assumed **no**, apart from the link notice). A quiet
   "Added 3 places · <link>" digest is possible later.
