@@ -935,16 +935,20 @@ Location: `backend/scripts/seed_demo.py` and `demo/trip.json`.
 - `members`: joined through `POST /trips/{id}/members`; the organizer is created with the trip.
 - `chat`: posted through `POST /trips/{id}/import`; the script waits up to 60 seconds for the import
   job to finish and prints the "Couldn't place" list (each one is an extraction miss worth fixing).
+- `add_places` (optional): `[{"query": "..."}]`, each added through `POST /trips/{id}/places`;
+  a miss prints a warning.
 - `votes`: `place` is matched by name against the trip's waypoints; unmatched votes print a warning.
+  A vote that already exists is not re-sent (the vote endpoint toggles), so reruns are safe.
 - `build`: requests a generation with a fresh `Idempotency-Key` and polls until it succeeds or
-  fails; prints the trip link.
+  fails. The script ends by printing each new member's `X-Member-Token` and the trip link.
 
 Usage:
 
 ```sh
-python backend/scripts/seed_demo.py demo/trip.json --api http://localhost:8000
+# from backend/; --api defaults to $BASE_URL or http://localhost:8000, Bearer token from $API_TOKEN
+uv run python scripts/seed_demo.py ../demo/trip.json
 # creates a new trip, prints its link
-python backend/scripts/seed_demo.py demo/trip.json --api <url> --trip abc123 --skip-build
+uv run python scripts/seed_demo.py ../demo/trip.json --api <url> --trip <trip id> --skip-build
 # seeds into an existing trip without building
 ```
 
