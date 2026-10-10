@@ -3,7 +3,7 @@ from urllib.parse import quote
 from uuid import UUID
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 from questline.integrations.imessage.commands import Preset
 
@@ -47,6 +47,14 @@ class BatchMessage(_Outgoing):
     sent_at: AwareDatetime
     text: str = Field(min_length=1, max_length=10_000)
     reply_to_guid: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @field_validator("display_name")
+    @classmethod
+    def _fit_display_name(cls, value: str | None) -> str | None:
+        # The backend rejects the whole batch for a blank or >60-char name; contact names vary.
+        if value is None:
+            return None
+        return value.strip()[:60] or None
 
 
 class Reaction(_Outgoing):
@@ -182,7 +190,6 @@ class QuestlineClient:
         return PlanSummary.from_content(response.json()["plan"]["content"])
 
     async def rename_member(self, trip_id: str, handle: str, name: str) -> None:
-        # Proposed endpoint; not yet in SPEC §10 (see docs/SPEC.md §11.1 contract notes).
         await self._request(
             "PATCH",
             f"/trips/{_segment(trip_id)}/imessage/members/{_segment(handle)}",
