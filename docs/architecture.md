@@ -1,5 +1,10 @@
 # Backend architecture
 
+This document describes the scaffold as implemented on `main`. The product requirements, the
+target data model, and the target API contract (trips, members, waypoints, votes, operations,
+resolutions, tasks, check-ins) are in [SPEC.md](SPEC.md); where the two differ, the spec is the
+destination and this document is the current state.
+
 ## Boundaries
 
 ```text

@@ -1,6 +1,11 @@
 # Questline
 
-Trip planning from group conversations, with an editable graph-based plan.
+A shared map that turns a group's chat into a trip they will actually take. Every place anyone
+mentioned becomes a waypoint; the group votes; Questline routes the committed stops into a main
+quest, hangs the maybes off it as side quests, surfaces disagreements with grounded options, and
+turns the accepted questline into a quest log the group checks off on the day.
+
+The product and implementation spec is in [docs/SPEC.md](docs/SPEC.md).
 
 ## Stack and current scope
 
@@ -15,8 +20,9 @@ The scaffold implements transcript ingestion → background generation → edita
 the interactive editor/frontend integration, and per-user authorization remain team work items.
 No paid APIs are called.
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing and [docs/architecture.md](docs/architecture.md)
-for API contracts, boundaries, limitations, and suggested work streams.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing, [docs/SPEC.md](docs/SPEC.md) for the
+product requirements, data model, and target API contract, and [docs/architecture.md](docs/architecture.md)
+for the scaffold's current boundaries, limitations, and suggested work streams.
 
 ## Frontend development
 
