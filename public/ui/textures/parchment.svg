@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640">
+  <defs>
+    <filter id="mottling" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency=".012" numOctaves="4" seed="24" stitchTiles="stitch"/>
+      <feColorMatrix values="0 0 0 0 .48  0 0 0 0 .28  0 0 0 0 .09  1.2 0 0 0 -.38"/>
+    </filter>
+    <filter id="fibers" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency=".18 .42" numOctaves="3" seed="7" stitchTiles="stitch"/>
+      <feColorMatrix values="0 0 0 0 .37  0 0 0 0 .23  0 0 0 0 .10  0 0 0 .17 0"/>
+    </filter>
+  </defs>
+  <path fill="#edcf97" d="M0 0h640v640H0z"/>
+  <path filter="url(#mottling)" opacity=".6" d="M0 0h640v640H0z"/>
+  <path filter="url(#fibers)" d="M0 0h640v640H0z"/>
+</svg>
