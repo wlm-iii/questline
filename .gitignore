@@ -1,4 +1,22 @@
 .env
 .env.*
 !.env.example
-!.env.test
+
+# Python and tooling
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Local Nix/direnv cache (keep the portable .envrc)
+.direnv/
+
+# Editors and operating systems
+.DS_Store
+.idea/

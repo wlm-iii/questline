@@ -56,7 +56,7 @@ Keep feedback respectful and constructive. Authors should respond to review comm
 - Run applicable formatting, linting, build, and test checks before requesting review.
 - Record the commands run and their results in the PR. If a check is unavailable or cannot be run, say so rather than claiming it passed.
 
-The project does not yet define setup or validation commands. As tooling is introduced, document exact setup and check commands in `README.md` and keep them current.
+See [README.md](README.md#checks) for setup and validation commands. Backend changes should pass Ruff, Pyright, and pytest; database changes should also pass PostgreSQL integration tests and `alembic check`. Keep these instructions and CI current as tooling evolves. Never run destructive integration tests against shared or demo data.
 
 ## Documentation and dependencies
 

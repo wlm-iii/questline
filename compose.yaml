@@ -1,0 +1,61 @@
+# Local development only. The application uses local Postgres even if backend/.env
+# points at Supabase. Run the Python processes directly to use that Supabase URL.
+x-backend: &backend
+  build: ./backend
+  environment: &backend-env
+    DATABASE_URL: postgresql://questline:questline@db:5432/questline
+    APP_ENV: development
+    API_TOKEN: local-development-only
+    PLANNER_PROVIDER: fake
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: questline
+      POSTGRES_PASSWORD: questline
+      POSTGRES_DB: questline
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U questline -d questline"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *backend
+    command: ["sh", "-c", "alembic upgrade head && python -m questline.jobs schema"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *backend
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "questline.jobs", "worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:
