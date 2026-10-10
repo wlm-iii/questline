@@ -153,7 +153,10 @@ class Relay:
             )
             self._reactions.add(trip_id, message.id, reaction)
             return True
-        if not text or len(text) > MAX_MESSAGE_CHARS:
+        if len(text) > MAX_MESSAGE_CHARS:
+            logger.warning("Skipping row %s: over %d characters", message.id, MAX_MESSAGE_CHARS)
+            return False
+        if not text:
             return False
         self._messages.add(
             trip_id,
