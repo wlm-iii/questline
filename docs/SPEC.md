@@ -31,6 +31,11 @@ behavior; skipping them during the hackathon is expected, not a bug.
 - **Plan JSON:** a graph (nodes + edges) that extends the scaffold's `PlanContent`. The UI edits it
   through operations (`POST /plans/{id}/operations`) applied server-side with revision checks; code
   recomputes routes, times, costs, and conflicts after every edit.
+- **iMessage bot (§11.1):** the group keeps chatting in their real iMessage group. A silent
+  Questline bot in that group feeds messages into the trip as they're sent, turns tapbacks on
+  messages into votes, and replies only when someone calls it (`@questline …`). Chatting happens
+  only in iMessage; the web app is the map/dashboard. Pasting a chat stays as the baseline input
+  and the demo fallback.
 
 ## 1. One-liner
 
@@ -67,8 +72,13 @@ trips). Everyone else votes and taps.
    showing who mentioned it and the quote. Anyone can also add a waypoint by searching. Mentions
    that can't be resolved are listed under "Couldn't place" with a one-tap search; nothing is
    invented.
+   **Or connect the iMessage group (§11.1):** someone adds the Questline bot to the group and
+   sends `@questline link abc123`. From then on, new messages flow in automatically and waypoints
+   appear on the map without anyone pasting anything.
 4. **Vote.** Tap a waypoint → *I'm in* / *Sure* / *Skip*. Tallies show on the marker. A waypoint
-   with at least one *I'm in* and one *Skip* is marked **contested**.
+   with at least one *I'm in* and one *Skip* is marked **contested**. In a connected iMessage
+   group, a tapback on a message that mentions exactly one waypoint also counts as a vote
+   (❤️ → *I'm in*, 👍 → *Sure*, 👎 → *Skip*).
 5. **Build the questline.** Tap *Build*. The AI proposes which waypoints are main quests and which
    are side quests, orders the main quest, and writes a grounded "why" for each. Code routes the
    main quest (solid line), computes arrival and departure times, attaches side quests to the leg
@@ -132,6 +142,10 @@ trips). Everyone else votes and taps.
 5. Decide and resolve: promote / demote / reorder / drop as revisioned edits; *Resolve* on a
    contested waypoint returns grounded options and applies the chosen one; *Accept*.
 6. Follow through: owners, tasks, *Quest complete*, progress, *Next up*.
+7. **iMessage bot (§11.1):** link a group with `@questline link <trip>`; live ingestion of new
+   messages into extraction; tapback votes; `@questline build`, `@questline add <place>`, and
+   `@questline link` replies. Silent otherwise. Pasted import (item 2) stays as the fallback, so
+   items 1–6 never depend on the bot. *Priority vs. items 5–6 is an open decision (§18).*
 
 ### Must-have tooling (not user-facing, but required)
 
@@ -144,15 +158,22 @@ trips). Everyone else votes and taps.
 ### Stretch (in priority order)
 
 1. Constraint extraction from the chat ("Sam can't hike", "back by 6 on Sunday") shown as chips and
-   fed to the planner.
-2. Private budget max + one anonymous veto per person (needs a member-authorized design first).
-3. Live check-in: geolocation marks a quest complete when you arrive.
-4. Split-the-bill screen ("Alex paid $240 → each person's share + Venmo link").
-5. Discord bot that forwards channel messages into the trip (§11).
+   fed to the planner. Extend it into a **Group notes** panel: dates/timing, budget hints, dietary
+   or mobility constraints, and open questions nobody answered ("who's bringing the speaker?"),
+   each quoting the source message. Same honesty rules: quotes only, never invented agreement.
+2. `@questline <question>` answers in the iMessage group ("how long is Monterey → Big Sur?").
+3. Private budget max + one anonymous veto per person (needs a member-authorized design first).
+4. Live check-in: geolocation marks a quest complete when you arrive.
+5. Split-the-bill screen ("Alex paid $240 → each person's share + Venmo link").
+6. Discord bot that forwards channel messages into the trip (§11).
 
 ### Not in the hackathon (later)
 
-- Instagram screenshot import; WhatsApp / iMessage export parsers (Harden if cheap).
+- Instagram screenshot import (the iMessage relay already sees attachment file paths, so
+  screenshots sent in the group are a cheap later path); WhatsApp / iMessage export parsers
+  (Harden if cheap).
+- iMessage groups that include Android/SMS members; a hosted iMessage provider instead of the
+  team's Mac.
 - Multiple trips detected in one chat; drive-vs-fly decisions.
 - Full expense ledger, booking, accounts/login.
 - Yelp or Tripadvisor data. Google Places already provides ratings, review counts, price levels,
@@ -181,6 +202,10 @@ a return leg.
   leaves that previous plan visible if generation fails.
 - Accepting locks a revision; an edit after acceptance returns the plan to draft. Check-offs survive
   rebuilds because they are keyed by waypoint, not by plan revision.
+- iMessage: a message sent in the linked group reaches the trip once (redelivery is ignored by
+  `external_id`), its places appear on the map within ~30 seconds, a ❤️/👍/👎 tapback on a
+  single-place message sets that sender's vote, removing the tapback removes it, and the bot never
+  replies to its own messages or posts without a command (except the one-time link notice).
 - Before stretch work, the whole team runs this flow on the deployed app with two devices.
 
 ## 6. Data honesty rules
@@ -208,6 +233,11 @@ These are product rules, not nice-to-haves. The demo must never claim something 
   or remove them accordingly. See Google's Places policies and place ID guidance.
 - Imported chat text is untrusted model input. It never grants permissions, triggers bookings or
   payments, or reaches another trip.
+- The iMessage bot reads a group only after someone in it sends `@questline link`, and it then
+  posts one visible notice saying it is reading the chat, that messages go to Google Gemini, and
+  how to stop (`@questline unlink`). It never reads messages sent before the link unless someone
+  explicitly asks (`@questline import last N`). Tapback votes are attributed to the sender's
+  handle, never guessed.
 
 ## 7. Tech stack
 
@@ -219,6 +249,7 @@ These are product rules, not nice-to-haves. The demo must never claim something 
 | Jobs | Procrastinate (Postgres-backed queue) | Extraction and plan generation run in the worker; job rows commit in the same transaction as the request |
 | AI | Gemini via Google AI Studio | Structured JSON output validated with Pydantic. Check AI Studio for the current Flash-tier model name and record it in `GEMINI_MODEL` |
 | Places & routes | Google Places API (New), Routes API, Maps JavaScript API | Text Search with location bias; `computeRoutes` with intermediates for the main quest; search-along-route for suggested side quests |
+| iMessage relay | [`imsg`](https://github.com/openclaw/imsg) CLI (`brew install steipete/tap/imsg`) on a team MacBook + a Python relay (`backend/src/questline/integrations/imessage/`) | Reads `~/Library/Messages/chat.db`, sends via Messages.app AppleScript. No SIP changes. Talks to FastAPI with `API_TOKEN` like any bot (§11.1) |
 | Hosting | Vercel Hobby (frontend); Render web service (API + worker) | If the hosting plan doesn't allow a separate worker process, start the worker inside the API process for the demo (§8). Free services sleep; warm the backend before judging and keep a local/video fallback |
 
 ## 8. Architecture
@@ -227,9 +258,13 @@ These are product rules, not nice-to-haves. The demo must never claim something 
 write path means a future Discord bot or a seed script uses exactly the same endpoints as the UI.
 
 ```text
-Browser (React map)
+iMessage group ──► team Mac: Messages.app + imsg watch ──► imessage relay
+                                                              │  (API_TOKEN; same endpoints, §11.1)
+Browser (React map)                                           │
   ├── GET /trips/{id}?revision=N  (poll every 3 s; unchanged → tiny response)
-  └── POST/PATCH ─────────────► FastAPI /api/v1 ──► PostgreSQL (questline schema)
+  └── POST/PATCH ─────────────► FastAPI /api/v1 ◄─────────────┘
+                                      │
+                                      └──────────────► PostgreSQL (questline schema)
                                       │                 ├── trips, members, messages, places, votes,
                                       │                 │   plan_generations, plans, tasks, checkins
                                       │                 └── procrastinate queue
@@ -412,15 +447,21 @@ backend validates on every write).
   `budget_preset` (`shoestring|comfortable|treat`, default `comfortable`), `current_plan_id`
   (nullable; only a ready plan from this trip), `revision` (int, bumps on any write),
   `unresolved_mentions` (jsonb list of `{mention_text, message_ids}`), `discord_channel_id`
-  (nullable), `created_at`.
-- **members:** `id` (uuid), `trip_id`, `name` (1–60 chars), `token_hash`, `discord_user_id`
-  (nullable), `created_at`. The raw token is returned once and stored only in the browser.
-- **messages:** `id` (uuid), `trip_id`, `external_id`, `author_id` (string; the name as written),
-  `member_id` (nullable; set when the author maps to a member), `sent_at` (tz-aware), `text`
-  (≤ 10,000 chars), `source` (`import|web|discord`), `import_id` (nullable). Unique on
-  `(trip_id, external_id)`. Order by `(sent_at, id)`.
-- **imports:** `id` (uuid), `trip_id`, `member_id`, `status` (`queued|running|succeeded|failed`),
-  `message_count`, `error` (nullable), `created_at`.
+  (nullable), `imessage_chat_guid` (nullable, unique; the linked group, e.g.
+  `iMessage;+;chat0000`), `created_at`.
+- **members:** `id` (uuid), `trip_id`, `name` (1–60 chars), `token_hash` (nullable for members
+  created by the iMessage relay), `discord_user_id` (nullable), `imessage_handle` (nullable; phone
+  or email; unique on `(trip_id, imessage_handle)`), `created_at`. The raw token is returned once
+  and stored only in the browser.
+- **messages:** `id` (uuid), `trip_id`, `external_id` (for iMessage: the message `guid`),
+  `author_id` (string; the name as written, or the iMessage handle), `member_id` (nullable; set
+  when the author maps to a member), `sent_at` (tz-aware), `text` (≤ 10,000 chars), `source`
+  (`import|web|discord|imessage`), `import_id` (nullable). Unique on `(trip_id, external_id)`.
+  Order by `(sent_at, id)`. Bot commands (`@questline …`) are not stored or extracted.
+- **imports:** `id` (uuid), `trip_id`, `member_id` (nullable for relay batches), `source`
+  (`paste|imessage`), `status` (`queued|running|succeeded|failed`), `message_count`, `error`
+  (nullable), `created_at`. Each relay flush (§11.1) is one import, so `extract_places` works the
+  same for pasted and live messages.
 - **places** (waypoints): `id` (uuid), `trip_id`, `google_place_id`, `name`, `category`
   (`eat|do|stay|along_the_way`), `address`, `lat`, `lng`, `google_maps_uri`, `price_level`
   (nullable int 0–4), `est_cost_low`, `est_cost_high`, `cost_basis` (nullable), `source`
@@ -475,6 +516,11 @@ the source of truth for payload schemas.
 | POST | `/places/{place_id}/checkins` | — | 200 `{checkin}` |
 | DELETE | `/places/{place_id}/checkins` | — | 204 |
 | GET | `/health/live`, `/health/ready` | — | `{ok: true}` |
+| POST | `/trips/{trip_id}/channels/imessage` | `{chat_guid}` (Bearer only) | 200 `{trip}`; 409 if the chat is linked to another trip |
+| DELETE | `/trips/{trip_id}/channels/imessage` | — (Bearer only) | 204; stops ingestion, keeps existing data |
+| GET | `/channels/imessage/{chat_guid}` | — (Bearer only) | 200 `{trip_id}`; 404 if unlinked (relay cache warm-up) |
+| POST | `/trips/{trip_id}/imessage/batch` | `{messages: [{guid, handle, display_name?, sent_at, text}]}` (Bearer only) | 202 `{import_id, inserted}`; upserts members by handle, inserts messages, enqueues `extract_places` |
+| POST | `/trips/{trip_id}/imessage/reactions` | `{reactions: [{handle, target_guid, kind: love\|like\|dislike, added}]}` (Bearer only) | 200 `{applied, skipped}` |
 
 Rules:
 
@@ -493,6 +539,11 @@ Rules:
   preset. Failed jobs leave `trips.current_plan_id` and `budget_preset` unchanged.
 - The web API assigns `source = web` to anything a member creates; callers cannot create planner
   or system rows.
+- `imessage/*` and `channels/imessage` routes accept only `Authorization: Bearer <API_TOKEN>`;
+  the relay is the only caller. Reactions map `love → in`, `like → ok`, `dislike → out` and apply
+  only when `target_guid` is a stored message whose `source_message_ids` link it to exactly one
+  place; otherwise they are `skipped`. `added: false` removes that member's vote if it is the same
+  kind. Other tapbacks (😂 ‼️ ❓) are ignored.
 - Errors are `{error: {code, message}}`, optionally with `plan_id` or `generation_id`. Use 404 for
   missing resources, 409 for revision and job conflicts, 413 for oversize imports, 422 for
   validation and cross-trip references, 429 for rate limits (Harden), and 503 for unavailable
@@ -579,7 +630,69 @@ Google place ID. The following is a structural example, not verified travel data
   demoted-node and estimate changes versus `previous_plan_id`; the first plan has an empty list. If
   a rebuild changes nothing, say so. Never promise that every preset switch lowers the estimate.
 
-## 11. Future: chat platform adapters
+## 11. Chat platform adapters
+
+### 11.1 iMessage bot (Build)
+
+The group keeps talking in their real iMessage group. A bot account in that group reads along and
+feeds the trip; the web app is where the organized version lives. **The bot is silent**: it posts
+only when someone sends a `@questline` command, plus the one-time link notice (§6). The goal is to
+declutter, not to add another voice to the chat.
+
+**How it runs.** A team MacBook stays awake on power with Messages.app signed into a dedicated bot
+Apple ID (email-only is fine). The relay (`backend/src/questline/integrations/imessage/relay.py`,
+run with `uv run python -m questline.integrations.imessage.relay`) keeps one long-lived
+`imsg rpc` process (JSON-RPC over stdio) for both watching and sending. It implements the
+scaffold's `ChatAdapter` protocol (`fetch_transcript` = `imsg history`, `post_plan_link` =
+`imsg send`). It needs Full Disk Access and Automation → Messages for the terminal that runs it.
+No SIP changes and no IMCore injection.
+
+**Inbound.**
+
+1. `watch.subscribe` streams new rows with `--reactions`. Drop `is_from_me` rows (echo guard) and
+   rows from chats with no linked trip. Persist the last `rowid` locally and resume with
+   `--since-rowid` after a restart.
+2. Messages starting with `@questline` are commands (below) and are not forwarded for extraction.
+3. Other text messages are buffered per chat and flushed to `POST /trips/{id}/imessage/batch`
+   every ~15 seconds or 20 messages, whichever comes first. Each flush is one `imports` row, so
+   extraction, dedupe by `external_id = guid`, and evidence quotes work exactly as for pasted chat.
+4. Senders are upserted as members by `imessage_handle`; `name` is `sender_name` from the Mac's
+   Contacts if available, otherwise the handle until they send `@questline I'm <name>`.
+5. Tapback rows (`is_reaction`, `reaction_type`, `is_reaction_add`, `reacted_to_guid`) go to
+   `POST /trips/{id}/imessage/reactions` and become votes (§10 rules).
+6. Inline replies (`thread_originator_guid`) are stored like any message; when the parent mentions
+   a place, the reply counts as evidence for that place. No separate thread UI.
+
+**Commands** (main group only; any participant may send them):
+
+| Command | Relay action | Bot reply |
+| --- | --- | --- |
+| `@questline link <trip_id>` | `POST /trips/{id}/channels/imessage` | One-time notice: reading this chat for *<trip>*, messages go to Google Gemini, `@questline unlink` to stop, plus the trip link |
+| `@questline build [shoestring\|comfortable\|treat]` | `POST /trips/{id}/plan-generations`, poll the generation | "Building…" then "Questline ready: N main quests, est. $X–Y/person (food + activities). <link>" or the sanitized failure |
+| `@questline add <place>` | `POST /trips/{id}/places {query}` | "Added <resolved name> · <link>" or "Couldn't find that place — try adding the city." |
+| `@questline link` (no ID) | — | The trip link |
+| `@questline I'm <name>` | Update the sender's member name | "Got it, <name>." |
+| `@questline import last N` | `fetch_transcript` → `imessage/batch` (N ≤ 300) | "Imported N messages · <link>" |
+| `@questline unlink` | `DELETE /trips/{id}/channels/imessage` | "Stopped reading this chat." |
+| anything else | — | Short usage help (Stretch: Q&A) |
+
+Trips are created on the web (§3 step 1) so origin/destination validation stays in one place; the
+group then links with the trip ID from the share link.
+
+**What `imsg` can't do without SIP off (not used):** inline replies from the bot, edit/unsend,
+typing indicators, text formatting, native polls, creating groups, adding members. A person adds
+the bot to the group. `send` returns when AppleScript runs, not on delivery; confirm by seeing the
+bot's own row come back through `watch`.
+
+**Limits to state honestly in the demo:**
+
+- Every participant must be on iMessage; an SMS/Android member turns the group into MMS, which the
+  email-only bot account can't join.
+- One Mac is a single point of failure: it must stay awake and online with Messages signed in.
+- The bot sees only messages sent after it joined, and only reads them after `link`.
+- Names are phone numbers/emails unless the Mac's Contacts know them or members send `I'm <name>`.
+
+### 11.2 Other platforms (later)
 
 Because imports go through `messages/batch` and the tables already carry `source`, `external_id`,
 `discord_channel_id`, and `discord_user_id`:
@@ -590,6 +703,10 @@ Because imports go through `messages/batch` and the tables already carry `source
   echo loops and verify consent and permissions. Chat participation must be visible and opt-in;
   never silently collect chats or send them to Gemini without consent. Estimate after the
   hackathon.
+- **WhatsApp:** the official Cloud API Groups feature requires an Official Business Account and
+  caps groups at 8; an unofficial client (e.g. Baileys) works but risks a number ban. Fallback only.
+- **Hosted iMessage providers** (Blooio, Linq, Sendblue): real phone numbers and SMS/RCS fallback
+  for Android members, but paid, and group support varies by plan. Evaluate after the hackathon.
 
 ## 12. Team and roles
 
@@ -599,6 +716,10 @@ Because imports go through `messages/batch` and the tables already carry `source
 | [Name] — database | **Database / backend lead** | Migrations (rename `conversations` → `trips`, new tables in §9), member-token auth, `GET /trips/{id}` state endpoint and revision bumping, import parsing and `messages/batch`, votes, tasks, check-ins, accept, Procrastinate wiring and in-process worker fallback, backend deploy, seed script (§20), integration tests |
 | [Name] — graphing | **Graph / planning lead** (`services/plan_generation.py`, `providers/maps.py`) | Candidate scoring, quest graph construction (nodes/edges/days), Routes API legs and polylines, timeline, detour calculation, suggested side quests, estimate, conflict detection, `/operations` apply-and-recompute, `changed_from_previous`, `FakeMaps`. Pure functions with the plan JSON as input/output; no HTTP or UI code |
 | [Name] — AI behavior | **AI lead** (`providers/planner.py`, extractor, resolutions) | Gemini provider with structured output: place extraction from pasted chat, main/side selection and ordering with grounded "why" notes, resolution options for contested waypoints, prompt tuning against the seed chat, guardrails for untrusted transcript text, honesty rules in prompts and validators, `FakePlanner`/`FakeExtractor`; owns the demo chat content |
+
+**iMessage relay owner: TBD (§18).** The relay is an API client with no UI and no model code;
+the backend lead owns its five endpoints (§10), and whoever owns the relay Mac runs and babysits
+it during the demo.
 
 Shared: agree on §9 and §10 in the first hour and record changes here first. Until real providers
 land, every track runs on the fake providers. The graph lead and AI lead agree on the planner output
@@ -616,10 +737,10 @@ onward.
 
 | When | Goal |
 | --- | --- |
-| Sat 9–10 AM | Branch from `main`; §9/§10 confirmed; migration for new tables started; fake providers stubbed; map renders hard-coded waypoints; both apps deployed saying hello |
+| Sat 9–10 AM | Branch from `main`; §9/§10 confirmed; migration for new tables started; fake providers stubbed; map renders hard-coded waypoints; both apps deployed saying hello. **iMessage spike (1 h cap):** on the relay Mac, `imsg chats --json` lists the test group and `imsg send --chat-id …` posts into it. If the spike fails, drop item 7 to Stretch and keep pasted import |
 | 10 AM–2 PM | **Walking skeleton.** Create/join with member tokens; add waypoint by search; trip-state polling; votes with tallies on markers; *Build* → Level 0 questline with a solid main-quest line; seed script posts the demo chat and votes (extraction may still be fake) |
-| 2–8 PM | Real extraction from pasted chat with evidence quotes; side quests dotted with anchors; waypoint card; `split_vote` conflicts and badges; `/operations` with recompute (promote/demote/reorder/drop); *Accept* |
-| 8 PM–12 AM | Level 1: detour minutes, suggested side quests, budget presets, estimate, change highlights; *Resolve* options via Gemini; quest log (owners, tasks, check-offs, next up); full deploy |
+| 2–8 PM | Real extraction from pasted chat with evidence quotes; side quests dotted with anchors; waypoint card; `split_vote` conflicts and badges; `/operations` with recompute (promote/demote/reorder/drop); *Accept*. **iMessage:** relay watches the test group, `link`, and live batches land as waypoints |
+| 8 PM–12 AM | Level 1: detour minutes, suggested side quests, budget presets, estimate, change highlights; *Resolve* options via Gemini; quest log (owners, tasks, check-offs, next up); full deploy. **iMessage:** tapback votes, `build` / `add` replies |
 | 12–6 AM | Sleep in shifts; bug fixes |
 | Sun 6–10 AM | Acceptance checks (§5) on the deployed app with two devices; then Harden items (§19) in order; then Stretch |
 | Sun 10 AM | Feature freeze. Deploy, record a backup demo video |
@@ -639,6 +760,10 @@ onward.
       checks in the README.
 - [ ] Pick a one-to-three-day demo route, check endpoint/place resolution and API access, and write
       a realistic demo chat (`demo/trip.json`) using disposable data.
+- [ ] iMessage: choose the relay MacBook; create the bot Apple ID now (new IDs can sit on
+      "waiting for activation"); sign it into Messages on that Mac (or a second macOS user that
+      stays logged in); `brew install steipete/tap/imsg`; grant Full Disk Access and Automation →
+      Messages to the terminal; make a test group of the iPhone teammates plus the bot.
 
 ## 15. Environment variables
 
@@ -648,6 +773,10 @@ Backend (`backend/.env`): `DATABASE_URL`, `APP_ENV`, `API_TOKEN`, `CORS_ORIGINS`
 `PLANNER_PROVIDER` (`fake|gemini`), `MAPS_PROVIDER` (`fake|google`), `GEMINI_API_KEY`,
 `GEMINI_MODEL`, `GOOGLE_MAPS_API_KEY`, `MAX_TRANSCRIPT_CHARS`, `RUN_WORKER_IN_PROCESS` (`true` for
 single-process demo hosting).
+
+iMessage relay (env on the relay Mac only): `QUESTLINE_API_URL`, `API_TOKEN`, `WEB_BASE_URL`
+(for links in replies), `IMSG_BIN` (default `imsg`), `RELAY_STATE_PATH` (stores the last
+`rowid` and the chat → trip cache), `RELAY_FLUSH_SECONDS` (default 15).
 
 Never commit `.env` files. The frontend bundle contains only the browser Maps key and the API URL;
 never `API_TOKEN` or the database URL.
@@ -661,6 +790,10 @@ stack plus the recorded demo as fallbacks.
 1. **Problem (20 s):** show a staged chaotic group chat screenshot. "300 messages, no plan."
 2. **Create + import (30 s):** create the trip, paste the chat. Waypoints land on the map with
    quotes: "Nobody organized anything, and here's every place, on a map, with who said it."
+   **With the iMessage bot:** mirror a phone showing the real group. Send `@questline link …`,
+   then two teammates text normally ("we HAVE to hit McWay Falls"); pins drop on the projected map
+   within seconds. Someone ❤️s a message and the vote tally moves. End with `@questline build`
+   in the chat and the questline appearing on the map. Pasting stays as the fallback beat.
 3. **Vote (30 s):** two teammates vote on their phones. Tallies appear on markers. One waypoint
    turns contested (⚠).
 4. **Build (40 s):** tap *Build*. Solid main quest routed through the committed stops with times;
@@ -687,6 +820,10 @@ stack plus the recorded demo as fallbacks.
 | Wi-Fi or deploy fails during the demo | Backup video recorded at feature freeze; local stack as a second fallback |
 | Running out of time | Cut all stretch work first. Keep change highlights as a plain text list and the dotted detour as a straight dashed line; spend remaining time on import → vote → build → resolve → accept → check off |
 | A provider times out or the server restarts | Mark the job failed, retain waypoints, votes, and the last successful plan, and allow a new request |
+| Relay Mac sleeps, loses Wi-Fi, or Messages signs out | `caffeinate -dims`, power plugged in, lid open; relay resumes from the saved `rowid`; pasted import and the seed script are the stage fallback |
+| New bot Apple ID is throttled or stuck activating | Create it before the build; fall back to a teammate's spare Apple ID, or pasted import |
+| Demo group has an Android/SMS member | The demo group is iPhone-only (bot + iPhone teammates); the Android teammate drives the web map |
+| Bot spams the chat | Silent by default; replies only to commands; one reply per command |
 | Map rendering jank on mobile | Cap markers to the trip's waypoints; render polylines once per plan revision; bottom sheet instead of sidebar |
 
 ## 18. Open decisions
@@ -698,6 +835,14 @@ stack plus the recorded demo as fallbacks.
 - Demo trip destination and route; the demo chat content.
 - Whether constraint extraction (Stretch 1) is promoted to Build if extraction lands early.
 - Vote labels and icons (*I'm in / Sure / Skip* assumed here).
+- iMessage bot priority: Must-have item 7 (assumed here) vs. Stretch, if it competes with
+  *Resolve* or the quest log for time.
+- Who owns the iMessage relay, which MacBook runs it, and whose spare Apple ID is the fallback.
+- Bot command prefix (`@questline` assumed) and display name in the group.
+- Whether the bot ever posts unprompted (assumed **no**, apart from the link notice). A quiet
+  "Added 3 places · <link>" digest is possible later.
+- Whether `@questline import last N` (reading pre-link history on explicit request) is in Build
+  or Harden.
 
 ## 19. Harden if there's time
 
@@ -720,6 +865,9 @@ this order after the acceptance checks pass.
 | 11 | Google content retention refresh/removal (§6) | Store place IDs and display fields; still show required Google attribution |
 | 12 | Separate API and worker processes (§8) | Worker started in the API process when `RUN_WORKER_IN_PROCESS=true` |
 | 13 | Full error-code table including 429 (§10) | `{error: {code, message}}` with 404/409/413/422/503 |
+| 14 | Link an iMessage member to their web member (claim a handle from the browser) so web votes and tapbacks merge (§11.1) | iMessage members and web members are separate rows; tapbacks vote as the handle member |
+| 15 | Tapbacks on messages that mention several places (§10) | Skipped; vote on the web or on a single-place message |
+| 16 | Relay health check and auto-restart (launchd) (§11.1) | Run the relay in a terminal; restart by hand; resume from the saved `rowid` |
 
 ## 20. Seed script
 
