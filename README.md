@@ -17,9 +17,9 @@ The product and implementation spec is in [docs/SPEC.md](docs/SPEC.md).
 
 The scaffold implements trip creation/joining → transcript ingestion → background generation →
 editable draft → acceptance, with member-token access and revision-based trip polling.
-**Generation is deterministic mock output, not AI.** Gemini, Google Maps, chat-platform adapters,
-the interactive editor/frontend integration, and per-user authorization remain team work items.
-No paid APIs are called.
+**Generation is deterministic mock output, not AI.** Google Places (New) can resolve trip endpoints
+and manually added waypoints when explicitly enabled; fake providers remain the default and make
+no paid calls. Gemini, routing, and the interactive editor/frontend integration remain work items.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing, [docs/SPEC.md](docs/SPEC.md) for the
 product requirements, data model, and target API contract, and [docs/architecture.md](docs/architecture.md)
@@ -175,6 +175,26 @@ bake `.env` files into images. Configure explicit `CORS_ORIGINS` for your fronte
 
 See [Supabase connection guidance](https://supabase.com/docs/guides/database/connecting-to-postgres).
 No remote Supabase project is created by this repository.
+
+### Google Places development
+
+Enable **Places API (New)** in a Google Cloud project with billing, set a quota/budget alert, and
+restrict a server-side API key to that API. Set `MAPS_PROVIDER=google` and `GOOGLE_MAPS_API_KEY`
+in `backend/.env`; never use a frontend `VITE_*` variable for this key. Restart the API afterward.
+
+This enables create-trip endpoint resolution and manual waypoint search only. Each search sends
+one bounded Text Search request with an explicit field mask; creating a trip searches twice.
+The Build implementation uses Google's top result and shows its resolved label—include city/region
+in queries. Empty results stay unresolved; upstream failures return sanitized 503 responses.
+Prices and opening hours remain unknown. Imports with Google Maps still return 503 until the
+real extraction pipeline lands; Gemini and routed planning are not implemented yet.
+
+Keep fake mode for normal development. Before publicly deploying real Places content, implement
+Google attribution and the applicable retention/refresh/removal policy for display fields,
+including copies in endpoint JSON and plan snapshots. Place IDs can be stored indefinitely;
+other content cannot simply be retained forever. See [Places policies](https://developers.google.com/maps/documentation/places/web-service/policies)
+and [Text Search](https://developers.google.com/maps/documentation/places/web-service/text-search).
+Provider tests use mocked HTTP and never consume Google quota. Live calls require explicit setup.
 
 ### Native development with local Postgres instead
 
