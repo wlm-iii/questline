@@ -1,7 +1,6 @@
 import re
 from dataclasses import dataclass
 from typing import Literal
-from uuid import UUID
 
 Preset = Literal["shoestring", "comfortable", "treat"]
 PRESETS: tuple[Preset, ...] = ("shoestring", "comfortable", "treat")
@@ -9,12 +8,14 @@ _PRESET_BY_NAME: dict[str, Preset] = {preset: preset for preset in PRESETS}
 MAX_NAME_CHARS = 60
 
 _PREFIX = re.compile(r"^\s*@questline(?:\s+|$)(.*)$", re.IGNORECASE | re.DOTALL)
+# Trip IDs are random URL-safe text (SPEC §9), not UUIDs.
+_TRIP_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _SET_NAME = re.compile(r"^i['’]m\s+(.+)$", re.IGNORECASE | re.DOTALL)
 
 
 @dataclass(frozen=True)
 class Link:
-    trip_id: UUID | None
+    trip_id: str | None
 
 
 @dataclass(frozen=True)
@@ -61,10 +62,7 @@ def parse_command(text: str) -> Command | None:
     if verb == "link":
         if not argument:
             return Link(None)
-        try:
-            return Link(UUID(argument))
-        except ValueError:
-            return Help()
+        return Link(argument) if _TRIP_ID.match(argument) else Help()
     if verb == "unlink" and not argument:
         return Unlink()
     if verb == "build":

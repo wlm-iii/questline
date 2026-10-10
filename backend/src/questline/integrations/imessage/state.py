@@ -1,7 +1,6 @@
 import os
 import tempfile
 from pathlib import Path
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -10,7 +9,7 @@ class RelayState(BaseModel):
     """Local relay state on the relay Mac: watch cursor, chat links, and `I'm <name>` names."""
 
     last_rowid: int = Field(default=0, ge=0)
-    chats: dict[str, UUID] = Field(default_factory=dict)  # chat_guid → trip_id
+    chats: dict[str, str] = Field(default_factory=dict)  # chat_guid → trip_id
     names: dict[str, str] = Field(default_factory=dict)  # handle → name
 
     @classmethod

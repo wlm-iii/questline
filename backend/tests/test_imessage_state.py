@@ -1,8 +1,6 @@
-from uuid import UUID
-
 from questline.integrations.imessage.state import RelayState
 
-TRIP_ID = UUID("6f1c2a8e-4b8f-4a1e-9a43-2f7c1d0b9e11")
+TRIP_ID = "abc123"
 
 
 def test_missing_file_loads_empty_state(tmp_path):

@@ -1,5 +1,3 @@
-from uuid import UUID
-
 import pytest
 
 from questline.integrations.imessage.commands import (
@@ -12,7 +10,7 @@ from questline.integrations.imessage.commands import (
     parse_command,
 )
 
-TRIP_ID = "6f1c2a8e-4b8f-4a1e-9a43-2f7c1d0b9e11"
+TRIP_ID = "abc123-Xy_9"
 
 
 @pytest.mark.parametrize(
@@ -23,19 +21,20 @@ def test_ordinary_text_is_not_a_command(text):
 
 
 def test_link_with_trip_id():
-    assert parse_command(f"@questline link {TRIP_ID}") == Link(trip_id=UUID(TRIP_ID))
+    assert parse_command(f"@questline link {TRIP_ID}") == Link(trip_id=TRIP_ID)
 
 
 def test_prefix_and_verb_are_case_insensitive_and_whitespace_tolerant():
-    assert parse_command(f"  @Questline   LINK   {TRIP_ID} ") == Link(trip_id=UUID(TRIP_ID))
+    assert parse_command(f"  @Questline   LINK   {TRIP_ID} ") == Link(trip_id=TRIP_ID)
 
 
 def test_link_without_id_asks_for_the_trip_link():
     assert parse_command("@questline link") == Link(trip_id=None)
 
 
-def test_link_with_malformed_id_is_help():
-    assert parse_command("@questline link abc123") == Help()
+@pytest.mark.parametrize("trip_id", ["abc/123", "a" * 65, "two words"])
+def test_link_with_malformed_id_is_help(trip_id):
+    assert parse_command(f"@questline link {trip_id}") == Help()
 
 
 def test_unlink():
