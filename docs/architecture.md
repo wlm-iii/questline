@@ -1,132 +1,104 @@
-# Backend architecture
+# Backend architecture and alignment status
 
-This document describes the scaffold as implemented on `main`. The product requirements, the
-target data model, and the target API contract (trips, members, waypoints, votes, operations,
-resolutions, tasks, check-ins) are in [SPEC.md](SPEC.md); where the two differ, the spec is the
-destination and this document is the current state.
+[Product spec](SPEC.md) defines the target. This document describes the current implementation,
+not a claim that all Build features are finished.
 
-## Boundaries
+## Current flow
 
 ```text
-Chat adapter / transcript upload
-               ↓
-       FastAPI /api/v1
-               ↓
- PostgreSQL (private questline schema)
-   messages + immutable snapshots + queue
-               ↓
-     Procrastinate worker
-               ↓
-  Planner interface → fake provider today
-               ↓
-      validated draft graph
-               ↓
-        interactive editor
+Create / join trip → member token
+          ↓
+Structured transcript batch → FastAPI → private questline PostgreSQL schema
+          ↓
+Request-time snapshot + durable job (same transaction)
+          ↓
+Procrastinate worker → deterministic fake planner → new draft plan
+          ↓
+Trip-state polling → accept, or service-only revision-checked replacement
 ```
 
-One codebase, separate API and worker processes. Supabase is used as managed PostgreSQL, not as a
-frontend-accessible database API. A future Gemini provider implements `providers/planner.py`;
-Google Places/Routes implementations belong behind `providers/maps.py`. Keep credentials, timeouts,
-rate limiting, and provider-specific payloads inside adapters.
+The API and worker normally run as separate processes. `RUN_WORKER_IN_PROCESS=true` runs the same
+queue worker in FastAPI's lifespan for single-process demo hosting; it does not replace durable
+jobs with FastAPI BackgroundTasks. Migrations and queue setup must run before either deployment.
 
-| Path | Responsibility |
-| --- | --- |
-| `backend/src/questline/api/` | HTTP contracts, validation, access gate, status codes |
-| `backend/src/questline/schemas.py` | Shared request, transcript, and graph schemas |
-| `backend/src/questline/models.py` | PostgreSQL persistence |
-| `backend/src/questline/services/` | Planning orchestration independent of HTTP |
-| `backend/src/questline/jobs.py` | Queue wiring, worker entrypoint, queue schema bootstrap |
-| `backend/src/questline/providers/` | AI and Maps boundaries; deterministic mock planner |
-| `backend/src/questline/integrations/` | Future platform-specific chat adapters |
-| `backend/migrations/` | Versioned application schema migrations |
+## Implemented contracts
 
-## API contract
+All application routes are under `/api/v1`. Health endpoints also have root aliases for existing
+hosting probes. JSON fields are snake_case. `/docs` and `/openapi.json` describe current payloads.
 
-All versioned routes require `Authorization: Bearer <API_TOKEN>`. JSON fields use snake_case.
-Swagger `/docs` and `/openapi.json` are the source of truth for payload schemas.
-
-| Method | Path under `/api/v1` | Behavior |
+| Method | Path | Access / behavior |
 | --- | --- | --- |
-| POST | `/conversations` | Create a planning context; returns 201 |
-| POST | `/conversations/{id}/messages/batch` | Import messages; return inserted count and revision |
-| POST | `/conversations/{id}/plan-generations` | Snapshot transcript and enqueue work; returns 202 |
-| GET | `/plan-generations/{id}` | Poll status, sanitized error, and eventual `plan_id` |
-| GET | `/plans/{id}` | Load draft/accepted graph and current revision |
-| PATCH | `/plans/{id}` | Replace full `content` with expected `revision`; stale edits return 409 |
-| POST | `/plans/{id}/accept` | Accept expected revision; stale requests return 409 |
+| POST | `/trips` | Public; resolves fixture endpoints, creates organizer, returns `{trip, member, member_token}` |
+| POST | `/trips/{id}/members` | Public link-based join; returns `{member, member_token}` |
+| GET | `/trips/{id}?revision=N` | Member/service; current trip state, or `{unchanged: true, revision}` |
+| POST | `/trips/{id}/messages/batch` | Member/service; append-only deduplication, `{inserted, revision}` |
+| POST | `/trips/{id}/plan-generations` | Member/service; `{budget_preset}` and `Idempotency-Key`, returns 202 `{generation}` |
+| GET | `/plan-generations/{id}` | Member/service; `{generation}` with eventual `plan_id` |
+| GET | `/plans/{id}` | Member/service; `{plan}` |
+| PATCH | `/plans/{id}` | **Service only**; replace `{revision, content}`, returns `{plan}` |
+| POST | `/plans/{id}/accept` | Member/service; expected revision, returns `{plan}` |
+| GET | `/health/live`, `/health/ready` | Public; `{ok: true}`; readiness checks DB connectivity only |
 
-`PATCH` replaces plan content, not individual graph operations. Every edit increments the revision
-and returns the plan to draft status. Acceptance also increments the revision. Canvas coordinates
-are not yet modeled; don't equate editor positions with itinerary ordering.
+Errors use `{error: {code, message}}`; conflict errors may also include `generation_id` inside
+`error`. Invalid requests return 422 without echoing potentially sensitive input.
 
-### Ingestion and generation
+### Access and state
 
-- Ingestion is append-only for now. Deduplicate by conversation + external message ID. Identical
-  redelivery is ignored; changed content under the same ID returns 409 and rolls back the whole batch.
-- Messages require timezone-aware timestamps. Snapshots are ordered by timestamp then stored UUID
-  (a stable tie-breaker, not a guarantee of source-platform order for identical timestamps).
-- Transcript size is bounded by `MAX_TRANSCRIPT_CHARS` (default 100,000); oversized content gets 413,
-  never silent truncation. Real providers must also enforce their model's token budget.
-- Ingestion and snapshot creation lock the conversation row so revision and snapshot stay consistent.
-- Generation requires `Idempotency-Key`. Within a conversation, repeating the same key and request
-  returns the existing generation, even if newer messages have arrived. Changed request parameters
-  under that key return 409. Use a new key to generate again from the latest transcript.
-- The generation row and queued job commit in **one database transaction**. No in-process background
-  tasks are used. API restarts don't lose queued work.
-- The worker reads the whole saved snapshot, not the conversation's subsequently changing messages.
-- Output is Pydantic-validated; graph IDs must be unique and edges reference existing nodes. Generated
-  message references must belong to the snapshot. This does not yet prove itinerary feasibility.
-- Each generation creates a **new** plan. Queue locks and a unique generation-to-plan relation prevent
-  duplicate outputs; replaying completed work cannot overwrite an edited plan.
-- Provider errors become sanitized `failed` status. Automatic paid-provider retries, cancellation,
-  and stalled-job recovery are not implemented yet. After a failure, submit a new request/key.
-  A killed worker may leave a generation `running`; monitor and implement recovery before production.
+- Create/join returns a random member token once. Only its SHA-256 hash is persisted.
+- Browsers send `X-Member-Token`; token membership gates each trip/resource lookup.
+- Cross-trip references return 422. The global `API_TOKEN` remains for tooling and bots only.
+- Link-based joining is public by design. This is not private/account-based authentication.
+- All implemented state-changing writes lock the trip and bump its revision, including job status,
+  accepted plans, and edits. Identical message redelivery does not bump revision.
+- Trip-state reads hold a shared trip lock so the revision and returned state are consistent.
+- Full-content replacement is not a browser editor API. `/operations` and recomputation are pending.
 
-### Graph shape
+### Jobs
 
-`Plan.content` is validated JSONB containing `title`, `graph`, `assumptions`, `open_questions`, and
-`warnings`. Nodes currently represent `place`, `activity`, or `lodging`. Edges represent `precedes`,
-`travel`, or `alternative`. This models a suggested plan, not the worldwide road network.
+- Snapshots are captured **at request time**, not job start. They contain messages, members, preset,
+  timezone, and reserved `places`/`votes` lists. These lists are currently empty because waypoint and
+  vote persistence are not implemented; never describe them as a completed candidate pipeline.
+- Generation rows and queued jobs commit atomically on the same psycopg connection.
+- Conversation rows are now trips. Existing rows, messages, and plans migrate without deletion.
+- Per-trip queue locks serialize work. The trip row lock ensures requests find an active build:
+  same preset returns it, different preset returns `409 plan_in_progress`.
+- Successful output is a **draft** plan, saved atomically with `current_plan_id` and the preset.
+- Failure leaves the previous successful plan/preset unchanged. Errors are sanitized.
+- Completed task replay does not overwrite edited plans. Each new generation creates a new plan.
+- Stalled-job recovery/timeouts and a partial unique active-job index remain Harden work.
 
-The fake planner deliberately returns a labeled example activity rather than pretending to infer
-preferences. Agree on schema extensions (dates, budgets, travel modes, participant preferences,
-layout) with the editor and AI owners before building them independently.
+## Provider and graph boundaries
 
-## Security and deployment limits
+`Planner.generate(snapshot, request)` receives the complete immutable request snapshot.
+The fake planner intentionally returns an empty, clearly labeled draft, not invented resolved places.
+`FakeMaps` resolves only `San Jose, CA` and `Big Sur, CA`, using explicitly labeled fixture data.
+These are development fixtures, not Google-verified results.
 
-This is a development/private-demo scaffold, **not a multi-tenant production app**.
+`PLANNER_PROVIDER=fake|gemini`, `MAPS_PROVIDER=fake|google`, and `GEMINI_MODEL` are recognized.
+Real provider adapters are not implemented: selecting them returns a clear 503 on relevant requests,
+rather than silently falling back to fake output. Gemini/Maps credentials remain server-side.
 
-- The shared bearer token is only a coarse access gate. Anyone holding it can access all records.
-  Never embed a shared deployment secret in a publicly distributed frontend bundle.
-- Before public access: implement user/bot identities, scoped credentials, conversation membership
-  authorization, rate/request-size limits, and retention/deletion controls (including saved snapshots).
-- Keep `questline` private in Supabase; don't expose it through PostgREST or grant anonymous access.
-  Use separate least-privilege runtime and migration roles before production.
-- Chat participation must be visible and opt-in. Verify each platform's permissions and historical
-  transcript availability. Do not silently collect chats or send them to Gemini without consent.
-- Treat chat messages as untrusted model input. Do not let them grant tool permissions or trigger
-  bookings, payments, arbitrary URLs, or access to other conversations.
-- Keep uncertain AI suggestions explicit. Validate dates, travel times, and place matches rather than
-  presenting generated guesses as verified facts.
-- Maps data has caching/attribution restrictions. Store place IDs where appropriate; do not indiscriminately
-  persist provider responses. Review the policies for each API you integrate.
-- `/health/live` checks the process; `/health/ready` checks database connectivity only, not worker health,
-  queue migrations, or third-party APIs. Run migrations before starting services.
+Plan schemas accept main/side roles, anchors, coordinates, travel/detour edges, polylines, days,
+prices, conflicts, estimates, warnings, and change summaries. Basic graph references, cost ranges,
+and timestamps are checked. Full route feasibility and derived-field recomputation are **not** done.
 
-## Work streams
+## Remaining Build work
 
-1. **AI planning:** implement Gemini behind `Planner`, structured output validation, model configuration,
-   transcript-to-constraints extraction, uncertainty, and token/cost limits. Add the official
-   `google-genai` dependency and update `uv.lock` when implementing it.
-2. **Maps:** implement place resolution and route estimates with HTTPX, bounded timeouts/retries, correct
-   attribution, and storage rules; integrate with the planning service rather than HTTP routes.
-3. **Bots:** choose one platform, normalize transcript events, verify consent/permissions, ingest through
-   the API, request generation, poll status, and post a link. Add edits/deletions deliberately.
-4. **Editor:** consume OpenAPI contracts, render graph JSON, edit full content with revision checking,
-   handle 409 conflicts, and surface assumptions/questions. The React/TypeScript/Vite scaffold is
-   at the repository root; API integration and the interactive editor remain to be implemented.
-5. **Platform/auth:** user and bot authentication, conversation membership, deployment, rate limits,
-   logging/monitoring, retry/recovery policies, and privacy controls.
+- Places/votes/imports/tasks/check-ins tables, endpoints, and populated trip-state collections.
+- Pasted-chat parsing, extraction, FakeExtractor, and Gemini/Google adapters.
+- Planner selection contract `{main, side, why}` and code-owned routing/timing/estimate calculations.
+- `/operations` validation and recompute; grounded `/resolutions`.
+- API-driven seed script and demo chat (the smoke script tests only this foundation).
+- Frontend map, creation/join, polling, votes, editor, and quest log; the frontend is still Vite's starter.
+- iMessage relay and service-only channel/reaction endpoints.
+- Frontend deployment and deployment manifests; actual Supabase/hosting resources are not created.
 
-Coordinate changes to `schemas.py` and migrations early. Use fake planning for independent development;
-keep integration tests deterministic and free of real Gemini/Maps calls.
+Divide these by the four roles in SPEC §12. Extend schemas and migrations deliberately; tests
+should use fake providers and never consume real Gemini/Maps quota.
+
+## Security boundaries
+
+Keep the `questline` schema out of Supabase's exposed API schemas. Never ship the service token or
+DB credentials in the browser. Use synthetic data until consent, transcript deletion/retention,
+Google attribution/storage policies, and deployment controls are implemented. Imported messages
+are untrusted input and must not grant AI permissions to book, pay, execute tools, or access other trips.
