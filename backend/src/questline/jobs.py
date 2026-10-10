@@ -35,7 +35,7 @@ def create_queue(settings: Settings, sessions: async_sessionmaker[AsyncSession])
 
     @app.task(name="questline.extract_places", queue="plans")
     async def extract_task(import_id: str) -> None:
-        await extract_places(UUID(import_id), sessions)
+        await extract_places(UUID(import_id), sessions, settings=settings)
 
     return app, generate_task, extract_task
 

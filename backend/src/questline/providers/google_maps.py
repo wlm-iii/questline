@@ -1,11 +1,15 @@
 """Bounded server-side Places API (New) calls; no inferred prices or opening hours."""
 
 import asyncio
+import math
+import re
+import unicodedata
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from questline.providers.maps import ResolvedPlace
+from questline.providers.errors import ProviderUnavailable
+from questline.providers.maps import ResolvedPlace, SearchBounds
 from questline.schemas import Endpoint
 
 SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
@@ -15,7 +19,7 @@ FIELD_MASK = (
 )
 
 
-class MapsUnavailable(Exception):
+class MapsUnavailable(ProviderUnavailable):
     """Safe to show to clients; never includes upstream response text or credentials."""
 
 
@@ -55,11 +59,14 @@ class GoogleMaps:
         self._api_key = api_key
         self._transport = transport
 
-    async def _search(self, query: str) -> GooglePlace | None:
+    async def _search(self, query: str, bounds: SearchBounds | None = None) -> GooglePlace | None:
         if not query.strip():
             return None
         # One result is the Build contract; expose its resolved label, not a claim
         # that an ambiguous query uniquely identified a place. No retries/billing surprises.
+        body: dict[str, object] = {"textQuery": query, "pageSize": 1, "languageCode": "en"}
+        if bounds is not None:
+            body["locationBias"] = bounds.google_bias()
         try:
             async with (
                 asyncio.timeout(12),
@@ -70,7 +77,7 @@ class GoogleMaps:
                 response = await client.post(
                     SEARCH_URL,
                     headers={"X-Goog-Api-Key": self._api_key, "X-Goog-FieldMask": FIELD_MASK},
-                    json={"textQuery": query, "pageSize": 1, "languageCode": "en"},
+                    json=body,
                 )
             if response.status_code != 200:
                 raise MapsUnavailable("Google Maps is unavailable. Try again later.")
@@ -95,10 +102,28 @@ class GoogleMaps:
             lng=place.location.longitude,
         )
 
-    async def resolve_place(self, query: str) -> ResolvedPlace | None:
-        place = await self._search(query)
+    async def resolve_place(
+        self, query: str, *, bounds: SearchBounds | None = None, mention_text: str | None = None
+    ) -> ResolvedPlace | None:
+        if mention_text is not None and bounds is None:
+            return None  # Legacy trips without endpoints cannot ground imported mentions.
+        place = await self._search(query, bounds)
         if place is None:
             return None
+        if bounds is not None and not bounds.contains(
+            place.location.latitude, place.location.longitude
+        ):
+            return None
+        if mention_text is not None:
+
+            def tokens(value: str) -> set[str]:
+                normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+                return set(re.findall(r"[a-z0-9]+", normalized.casefold()))
+
+            mentioned = tokens(mention_text)
+            matched = mentioned & tokens(place.displayName.text)
+            if not mentioned or len(matched) < math.ceil(len(mentioned) * 0.6):
+                return None
         return ResolvedPlace(
             google_place_id=place.id,
             name=place.displayName.text,

@@ -19,9 +19,47 @@ class ResolvedPlace(Schema):
     cost_basis: str | None = None
 
 
+class SearchBounds(Schema):
+    south: float
+    north: float
+    west: float
+    east: float
+
+    @classmethod
+    def for_trip(cls, origin: Endpoint, destination: Endpoint) -> "SearchBounds":
+        # Approximate corridor with padding; this is a matching guard, not a route.
+        west, east = sorted((origin.lng, destination.lng))
+        if east - west > 180:
+            west, east = east, west  # Shorter box crosses the antimeridian.
+        return cls(
+            south=max(-90, min(origin.lat, destination.lat) - 0.5),
+            north=min(90, max(origin.lat, destination.lat) + 0.5),
+            west=(west - 0.5 + 180) % 360 - 180,
+            east=(east + 0.5 + 180) % 360 - 180,
+        )
+
+    def contains(self, lat: float, lng: float) -> bool:
+        longitude = (
+            self.west <= lng <= self.east
+            if self.west <= self.east
+            else lng >= self.west or lng <= self.east
+        )
+        return self.south <= lat <= self.north and longitude
+
+    def google_bias(self) -> dict:
+        return {
+            "rectangle": {
+                "low": {"latitude": self.south, "longitude": self.west},
+                "high": {"latitude": self.north, "longitude": self.east},
+            }
+        }
+
+
 class MapsProvider(Protocol):
     async def resolve_endpoint(self, query: str) -> Endpoint | None: ...
-    async def resolve_place(self, query: str) -> ResolvedPlace | None: ...
+    async def resolve_place(
+        self, query: str, *, bounds: SearchBounds | None = None, mention_text: str | None = None
+    ) -> ResolvedPlace | None: ...
 
 
 class FakeMaps:
@@ -42,7 +80,9 @@ class FakeMaps:
         }
         return fixtures.get(query.strip().lower())
 
-    async def resolve_place(self, query: str) -> ResolvedPlace | None:
+    async def resolve_place(
+        self, query: str, *, bounds: SearchBounds | None = None, mention_text: str | None = None
+    ) -> ResolvedPlace | None:
         fixtures = {
             "mcway falls": ResolvedPlace(
                 google_place_id="fake-mcway-falls",

@@ -19,7 +19,8 @@ The scaffold implements trip creation/joining → transcript ingestion → backg
 editable draft → acceptance, with member-token access and revision-based trip polling.
 **Generation is deterministic mock output, not AI.** Google Places (New) can resolve trip endpoints
 and manually added waypoints when explicitly enabled; fake providers remain the default and make
-no paid calls. Gemini, routing, and the interactive editor/frontend integration remain work items.
+no paid calls. Gemini place extraction is implemented; Gemini planning, routing, and the
+interactive editor/frontend integration remain work items.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing, [docs/SPEC.md](docs/SPEC.md) for the
 product requirements, data model, and target API contract, and [docs/architecture.md](docs/architecture.md)
@@ -182,12 +183,12 @@ Enable **Places API (New)** in a Google Cloud project with billing, set a quota/
 restrict a server-side API key to that API. Set `MAPS_PROVIDER=google` and `GOOGLE_MAPS_API_KEY`
 in `backend/.env`; never use a frontend `VITE_*` variable for this key. Restart the API afterward.
 
-This enables create-trip endpoint resolution and manual waypoint search only. Each search sends
+This enables create-trip endpoint resolution and manual waypoint search. Each search sends
 one bounded Text Search request with an explicit field mask; creating a trip searches twice.
 The Build implementation uses Google's top result and shows its resolved label—include city/region
 in queries. Empty results stay unresolved; upstream failures return sanitized 503 responses.
-Prices and opening hours remain unknown. Imports with Google Maps still return 503 until the
-real extraction pipeline lands; Gemini and routed planning are not implemented yet.
+Prices and opening hours remain unknown. Imported mentions use trip-biased search and reject
+out-of-region or implausibly named matches. Gemini planning and routing are not implemented yet.
 
 Keep fake mode for normal development. Before publicly deploying real Places content, implement
 Google attribution and the applicable retention/refresh/removal policy for display fields,
@@ -195,6 +196,27 @@ including copies in endpoint JSON and plan snapshots. Place IDs can be stored in
 other content cannot simply be retained forever. See [Places policies](https://developers.google.com/maps/documentation/places/web-service/policies)
 and [Text Search](https://developers.google.com/maps/documentation/places/web-service/text-search).
 Provider tests use mocked HTTP and never consume Google quota. Live calls require explicit setup.
+
+### Gemini extraction development
+
+To extract arbitrary named places, set `PLANNER_PROVIDER=gemini`, `GEMINI_API_KEY`, and
+`GEMINI_MODEL` in the ignored `backend/.env`, using a currently supported structured-output
+model from AI Studio. Use `MAPS_PROVIDER=google` plus its server-side key to resolve real places.
+Restart both API and worker. Missing configuration returns 503 before saving/enqueuing imports.
+The existing `PLANNER_PROVIDER` selector controls extraction too; **Gemini builds still return
+503** until the planner is implemented. Fake mode remains fully supported for independent work.
+
+Extraction sends imported message IDs and text to Gemini as untrusted data. Structured output
+must cite supplied IDs and quote an exact place-name substring; no model votes are accepted.
+Google resolution uses a padded origin/destination box, rejects out-of-box and implausibly named
+matches, and retains them as unresolved mentions. This conservative matcher can miss aliases;
+manual search is the fallback. No provider call holds the trip write lock. Gemini has a 30-second
+deadline and no automatic retries; extraction/resolution together have a 120-second deadline.
+Failures preserve input and become sanitized failed import status; reimport to retry.
+
+Configure quotas/budget alerts and use consented or synthetic chat only. No live provider calls
+are part of the tests, including the real SDK transport test. See [Gemini structured outputs](https://ai.google.dev/gemini-api/docs/structured-output).
+Google attribution/content retention requirements above still block public real-data deployment.
 
 ### Native development with local Postgres instead
 
