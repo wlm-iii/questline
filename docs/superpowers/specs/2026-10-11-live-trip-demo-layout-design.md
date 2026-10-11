@@ -24,11 +24,15 @@ Decisions made with the user:
   optional and is omitted here.
 - The selected view is kept in `localStorage` per trip (key `questline-view:<tripId>`), with
   try/catch, and defaults to Map.
-- **Map** renders today's `TripWorkspace` unchanged.
-- The Import chat dialog, which today is opened inside `TripWorkspace`, can also be opened from
-  the heading. The open state moves up to `TripApp` and is passed down, so there is one dialog.
-- The vote action moves from `TripWorkspace` into `src/trip/useVote.ts` so that all three views
-  cast real votes the same way (optimistic `mutate`, same error notices).
+- **Map** renders today's `TripWorkspace`. It stays mounted on the other views (hidden with the
+  `hidden` class, as the demo does), so the Google map does not reload on every tab switch. Its
+  board tab becomes controllable (`tab`/`onTabChange` props), so the rail's quest-log button can
+  open Map › Quest log.
+- The Import chat dialog moves up to `TripApp`. `TripWorkspace` gets an `onImport` prop, and the
+  heading opens the same single dialog.
+- Overview and Planning desk cast votes through a new `src/trip/useVote.ts`
+  (`mutate(api => api.vote(...))`, a pending list and an error notice). The Map view keeps its
+  existing vote code.
 
 ## 2. Overview view (`src/trip/ui/TripOverview.tsx`)
 
@@ -66,11 +70,12 @@ Composed with the existing `PlanningDesk` slots:
     agrees with the viewer's current server vote. Otherwise it is the vote's default tier (`in`
     → A, `ok` → C, `out` → E). A tapback or a vote elsewhere therefore moves the place.
   - **Party votes:** the section under the tier list shows real tallies and casts real votes.
-- **constraints:** `ConstraintsCard`, saved per trip on this device and labelled "On this device".
+- **constraints:** `ConstraintsCard`, saved on this device under the create page's existing key
+  `questline-device-constraints`, so preferences entered at creation show up here.
 - **travel:** `TravelCosts` with optional real figures: total route distance (sum of travel
   edges' `distance_m`), total drive minutes, and the plan's per-person estimate. The demo's fixed
-  sample numbers remain the defaults. Travel mode and gas price are saved per trip on this
-  device.
+  sample numbers remain the defaults. Travel mode uses the create page's
+  `questline-device-travel` key, and gas price uses `questline-device-gas`.
 - **location:** `LocationCard` unchanged.
 
 Pure logic goes in `src/trip/adapters.ts` or a new `src/trip/deskAdapters.ts`: tier↔vote
@@ -78,14 +83,11 @@ mapping, displayed-tier resolution, route totals and the stat labels.
 
 ## 4. Create page (`src/features/trip-setup/CreateTripPage.tsx`)
 
-- It adopts the `SetupPage` look: the eyebrow, the "Where will your quest take you?" heading and
-  two parchment cards.
-- **Left card:** the existing `CreateTripFields` (name, origin, destination, dates, your name),
-  with validation and submit unchanged.
-- **Right card:** "What happens next". Steps: create the trip → tap **Link iMessage** and send
-  it in your group → places appear as you chat → vote or rank → **Build**. The existing
-  "Resume your trip" link stays.
-- There are no budget, back-by or preference fields.
+- The page already uses `SetupPage`, with a "Your adventure" card and a "Your preferences" card
+  (travel mode and restrictions, saved on the device). Both cards stay.
+- Add a **"What happens next"** list under the intro. Steps: create the trip → tap **Link
+  iMessage** and send it in your group → places appear as you chat → vote or rank → **Build**.
+- "Resume your trip" and "Try the demo" stay.
 
 ## Error handling
 
