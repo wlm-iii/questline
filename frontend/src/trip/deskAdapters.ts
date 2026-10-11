@@ -26,6 +26,16 @@ export function voteForRank(current: VoteKind | null, tier: Tier): VoteKind | nu
   return next === current ? null : next
 }
 
+/** The viewer's vote after sending `sent`: the API toggles, so the current kind clears it. */
+export function afterVote(current: VoteKind | null, sent: VoteKind): VoteKind | null {
+  return current === sent ? null : sent
+}
+
+/** Stops with the viewer's in-flight votes applied, so repeated actions compute against them. */
+export function withPendingVotes(stops: StopView[], pending: Partial<Record<string, VoteKind | null>>): StopView[] {
+  return stops.map(stop => (stop.id in pending ? { ...stop, myVote: pending[stop.id] ?? null } : stop))
+}
+
 export const voteChoices: string[] = voteKinds.map(kind => voteLabels[kind])
 
 export function kindForChoice(choice: string): VoteKind | null {

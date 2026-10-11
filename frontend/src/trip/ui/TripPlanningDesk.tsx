@@ -1,4 +1,5 @@
-import type { Plan, TripSnapshot } from '../../api'
+import { useState } from 'react'
+import type { Plan, TripSnapshot, VoteKind } from '../../api'
 import type { Tier } from '../../components/tiers'
 import { TierList } from '../../components/TierList'
 import type { Constraints } from '../../demo/types'
@@ -10,6 +11,7 @@ import { TravelCosts } from '../../features/planning/TravelCosts'
 import { useSaved } from '../../lib/useSaved'
 import type { WorkspaceView } from '../adapters'
 import {
+  afterVote,
   conversationLines,
   displayedTiers,
   graphStops,
@@ -18,6 +20,7 @@ import {
   routeTotals,
   voteChoices,
   voteForRank,
+  withPendingVotes,
 } from '../deskAdapters'
 import { useVote } from '../useVote'
 import { TripConversation } from './TripConversation'
@@ -46,21 +49,38 @@ export function TripPlanningDesk({
   const [gasPrice, setGasPrice] = useSaved('questline-device-gas', 4.5)
   const [savedTiers, setSavedTiers] = useSaved<Partial<Record<string, Tier>>>(`questline-tiers:${tripId}`, {})
   const { vote } = useVote(onError)
+  // Votes sent but not yet in the snapshot. The API toggles, so a repeat of an action before the
+  // refresh lands would clear the vote: actions on a place wait until its vote settles.
+  const [inFlight, setInFlight] = useState<Partial<Record<string, VoteKind | null>>>({})
   const plan: Plan | null = snapshot.current_plan
-  const stops = view.stops
+  const stops = withPendingVotes(view.stops, inFlight)
   const ranks = displayedTiers(stops, savedTiers)
   const done = stops.filter(stop => stop.done).map(stop => stop.id)
 
+  function send(id: string, kind: VoteKind) {
+    const stop = stops.find(s => s.id === id)
+    if (!stop || id in inFlight) return
+    setInFlight(current => ({ ...current, [id]: afterVote(stop.myVote, kind) }))
+    void vote(id, kind).finally(() =>
+      setInFlight(current => {
+        const rest = { ...current }
+        delete rest[id]
+        return rest
+      }),
+    )
+  }
+
   function rank(id: string, tier: Tier) {
-    setSavedTiers({ ...savedTiers, [id]: tier })
+    if (id in inFlight) return
+    setSavedTiers(current => ({ ...current, [id]: tier }))
     const stop = stops.find(s => s.id === id)
     const next = stop ? voteForRank(stop.myVote, tier) : null
-    if (next) void vote(id, next)
+    if (next) send(id, next)
   }
 
   function voteFor(id: string, choice: string) {
     const kind = kindForChoice(choice)
-    if (kind) void vote(id, kind)
+    if (kind) send(id, kind)
   }
 
   return (
