@@ -201,13 +201,18 @@ Provider tests use mocked HTTP and never consume Google quota. Live calls requir
 
 To extract arbitrary named places, set `PLANNER_PROVIDER=gemini`, `GEMINI_API_KEY`, and
 `GEMINI_MODEL` in the ignored `backend/.env`, using a currently supported structured-output
-model from AI Studio. Use `MAPS_PROVIDER=google` plus its server-side key to resolve real places.
+model from AI Studio. `gemini-3.1-flash-lite` has passed a small live extraction test with the
+inline wire schema; older models such as `gemini-2.5-flash-lite` may reject new projects even when
+listed by model discovery. Verify inference access, not just listing. Use `MAPS_PROVIDER=google`
+plus its server-side key to resolve real places.
 Restart both API and worker. Missing configuration returns 503 before saving/enqueuing imports.
 The existing `PLANNER_PROVIDER` selector controls extraction too; **Gemini builds still return
 503** until the planner is implemented. Fake mode remains fully supported for independent work.
 
 Extraction sends imported message IDs and text to Gemini as untrusted data. Structured output
 must cite supplied IDs and quote an exact place-name substring; no model votes are accepted.
+The API uses a simple inline JSON schema; local Pydantic validation still enforces output limits,
+allowed fields, categories, and evidence checks, rather than trusting schema conformance alone.
 Google resolution uses a padded origin/destination box, rejects out-of-box and implausibly named
 matches, and retains them as unresolved mentions. This conservative matcher can miss aliases;
 manual search is the fallback. No provider call holds the trip write lock. Gemini has a 30-second

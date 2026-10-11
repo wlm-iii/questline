@@ -71,9 +71,12 @@ async def test_grounded_structured_output_and_configuration():
         {"id": str(MESSAGE.id), "text": MESSAGE.text}
     ]
     assert config["config"].response_mime_type == "application/json"
-    assert config["config"].response_json_schema["$defs"]["Mention"]["properties"]["message_ids"][
-        "items"
-    ]["enum"] == [str(MESSAGE.id)]
+    schema = config["config"].response_json_schema
+    assert "$defs" not in schema
+    assert "$ref" not in json.dumps(schema)
+    assert schema["properties"]["mentions"]["items"]["properties"]["message_ids"]["items"][
+        "enum"
+    ] == [str(MESSAGE.id)]
     assert "untrusted" in config["config"].system_instruction
     assert "secret-key" not in config["contents"]
 
@@ -97,6 +100,9 @@ async def test_empty_input_does_not_call_sdk():
         json.dumps({"mentions": [{**MENTION, "search_query": " "}]}),
         json.dumps({"mentions": [{**MENTION, "votes": {"Alice": "in"}}]}),
         json.dumps({"mentions": [{**MENTION, "category_guess": "invented"}]}),
+        json.dumps({"mentions": [{**MENTION, "mention_text": "x" * 301}]}),
+        json.dumps({"mentions": [{**MENTION, "message_ids": [str(MESSAGE.id)] * 11}]}),
+        json.dumps({"mentions": [MENTION] * 51}),
     ],
 )
 async def test_invalid_ungrounded_or_vote_output_fails_safely(text):

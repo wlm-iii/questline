@@ -20,7 +20,7 @@ mention_text must be an exact substring of a cited message. Cite only supplied m
 search_query should name that place; append city/region only if supported by the messages.
 Do not replace a named place with an alternative or invent addresses or coordinates.
 Use an empty mentions list when no identifiable named places are mentioned.
-category_guess is optional; it is a guess, not verified place data.
+category_guess is optional; omit it when unknown. It is a guess, not verified place data.
 """
 
 
@@ -43,11 +43,41 @@ class GeminiExtractor:
             return []
         try:
             by_id = {message.id: message for message in messages}
-            schema = Mentions.model_json_schema()
-            # Constrain references in the API schema AND validate them locally below.
-            schema["$defs"]["Mention"]["properties"]["message_ids"]["items"] = {
-                "type": "string",
-                "enum": sorted(str(mid) for mid in by_id),
+            # Use a small inline wire schema. Generated Pydantic schemas contain
+            # refs/defaults/constraints that not every Gemini model accepts.
+            # All stricter bounds and extra-field checks remain enforced locally.
+            schema = {
+                "type": "object",
+                "properties": {
+                    "mentions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "mention_text": {"type": "string"},
+                                "search_query": {"type": "string"},
+                                "message_ids": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "enum": sorted(str(mid) for mid in by_id),
+                                    },
+                                },
+                                "category_guess": {
+                                    "type": "string",
+                                    "enum": [
+                                        "eat",
+                                        "do",
+                                        "stay",
+                                        "along_the_way",
+                                    ],
+                                },
+                            },
+                            "required": ["mention_text", "search_query", "message_ids"],
+                        },
+                    }
+                },
+                "required": ["mentions"],
             }
             contents = json.dumps(
                 {
