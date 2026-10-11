@@ -36,8 +36,30 @@ npm run dev
 ```
 
 Vite serves the frontend at <http://localhost:5173> by default. Run the backend separately using
-one of the workflows below; the frontend scaffold is not yet wired to its API. Backend CORS
-allows the default Vite origin during development.
+one of the workflows below. A typed API client lives in `src/api/`, but the UI doesn't use it yet;
+the screens still run on local demo data.
+
+### Talking to the API
+
+The client calls same-origin `/api/v1/...`, and the Vite dev and preview servers proxy `/api` to
+`http://127.0.0.1:8000`, so no CORS setup is needed locally. To change either side, set these in
+`.env.local` and restart `npm run dev`:
+
+```sh
+# Dev/preview proxy target, for example when Compose uses API_PORT=58000. Never bundled.
+QUESTLINE_API_PROXY_TARGET=http://127.0.0.1:58000
+# Only when the frontend is served from a different origin than the API (no proxy).
+# The backend's CORS_ORIGINS must then include the frontend's exact origin.
+VITE_API_BASE_URL=https://api.example.com
+```
+
+Browsers authenticate with the member token returned by create/join, sent as `X-Member-Token`, and
+stored per trip in local storage (`src/api/session.ts`). Never use `API_TOKEN` in the frontend.
+
+Shared trip links have the form `/t/<tripId>`. Vite's dev and preview servers already serve
+`index.html` for them; a static host needs an equivalent rewrite of `/t/*` to `index.html`.
+`src/state/` holds the session hook (create, join, rejoin after a rejected token) and a trip
+provider that polls `GET /trips/{id}?revision=N` every 3 seconds while the tab is visible.
 
 ### Google map (optional)
 
