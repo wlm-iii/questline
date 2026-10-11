@@ -5,10 +5,22 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from questline.models import Member, Message, Place, Trip, Vote
+from questline.models import (
+    Checkin,
+    Import,
+    Member,
+    Message,
+    Place,
+    Plan,
+    PlanGeneration,
+    Task,
+    Trip,
+    Vote,
+)
+from questline.pricing import apply_estimate
 from questline.providers.maps import ResolvedPlace
 from questline.schemas import MessageInput
 
@@ -42,6 +54,103 @@ async def member_for_handle(
         session.add(member)
         await session.flush()
     return member
+
+
+async def claim_handle(session: AsyncSession, trip_id: UUID, handle: str, name: str) -> Member:
+    """`@questline I'm <name>`: tie a chat handle to a person.
+
+    When exactly one member with that name has no handle yet (someone who joined on the web),
+    the handle becomes theirs, and anything the handle already did in the chat moves to them.
+    Otherwise the handle's member is renamed, or created. Names never merge two handles.
+    """
+    current = await session.scalar(
+        select(Member).where(Member.trip_id == trip_id, Member.imessage_handle == handle)
+    )
+    matches = (
+        await session.scalars(
+            select(Member).where(
+                Member.trip_id == trip_id,
+                Member.imessage_handle.is_(None),
+                func.lower(Member.name) == name.casefold(),
+            )
+        )
+    ).all()
+    if len(matches) != 1:
+        if current is None:
+            current = Member(trip_id=trip_id, name=name, imessage_handle=handle)
+            session.add(current)
+        else:
+            current.name = name
+        await session.flush()
+        await _refresh_mention_names(session, trip_id, current)
+        return current
+    target = matches[0]
+    if current is not None:
+        await merge_member(session, trip_id, current, target)
+    target.imessage_handle = handle
+    await session.flush()
+    await _refresh_mention_names(session, trip_id, target)
+    return target
+
+
+async def _refresh_mention_names(session: AsyncSession, trip_id: UUID, member: Member) -> None:
+    """Places show who mentioned them by name; keep that in step with the member's name."""
+    await session.execute(
+        update(Place)
+        .where(Place.trip_id == trip_id, Place.mentioned_by == member.id)
+        .values(mentioned_by_name=member.name)
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def merge_member(session: AsyncSession, trip_id: UUID, source: Member, target: Member):
+    """Move everything `source` did to `target`, then delete `source`. Callers lock the trip."""
+    old, new = source.id, target.id
+    # One vote per member and place: keep whichever was cast most recently.
+    for vote in (await session.scalars(select(Vote).where(Vote.member_id == old))).all():
+        existing = await session.scalar(
+            select(Vote).where(Vote.place_id == vote.place_id, Vote.member_id == new)
+        )
+        if existing is None:
+            vote.member_id = new
+        elif vote.created_at > existing.created_at:
+            await session.delete(existing)
+            await session.flush()
+            vote.member_id = new
+        else:
+            await session.delete(vote)
+    for model, column in (
+        (Message, Message.member_id),
+        (Place, Place.mentioned_by),
+        (Task, Task.owner_member_id),
+        (Task, Task.created_by),
+        (Checkin, Checkin.member_id),
+        (Import, Import.member_id),
+        (PlanGeneration, PlanGeneration.requested_by),
+    ):
+        await session.execute(
+            update(model)
+            .where(model.trip_id == trip_id, column == old)
+            .values({column.key: new})
+            .execution_options(synchronize_session=False)
+        )
+    for plan in (await session.scalars(select(Plan).where(Plan.trip_id == trip_id))).all():
+        nodes = plan.content.get("graph", {}).get("nodes", [])
+        if any(node.get("owner_member_id") == str(old) for node in nodes):
+            content = dict(plan.content)
+            content["graph"] = {
+                **content["graph"],
+                "nodes": [
+                    {**node, "owner_member_id": str(new)}
+                    if node.get("owner_member_id") == str(old)
+                    else node
+                    for node in nodes
+                ],
+            }
+            plan.content = content
+    await session.flush()
+    await session.execute(delete(Member).where(Member.id == old))
+    session.expunge(source)
 
 
 async def ingest(
@@ -123,6 +232,17 @@ async def upsert_place(
         )
         session.add(place)
     else:
+        if source != "suggested":
+            refreshed = {
+                "category": place.category,
+                "price_level": resolved.price_level,
+                "est_cost_low": place.est_cost_low,
+                "est_cost_high": place.est_cost_high,
+                "cost_basis": place.cost_basis,
+            }
+            apply_estimate(refreshed)
+            for field in ("price_level", "est_cost_low", "est_cost_high", "cost_basis"):
+                setattr(place, field, refreshed[field])
         place.source_message_ids = list(
             dict.fromkeys([*place.source_message_ids, *(str(mid) for mid in message_ids or [])])
         )

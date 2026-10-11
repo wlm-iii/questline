@@ -693,7 +693,7 @@ with "🧭 Questline:" so the group can tell them apart. A dedicated bot Apple I
 | Command | Relay action | Bot reply |
 | --- | --- | --- |
 | `@questline link <trip_id>` | `POST /trips/{id}/channels/imessage` | One-time notice: reading this chat for *<trip>*, messages go to Google Gemini, `@questline unlink` to stop, plus the trip link |
-| `@questline build [shoestring\|comfortable\|treat]` | `POST /trips/{id}/plan-generations`, poll the generation | "Building…" then "Questline ready: N main quests, est. $X–Y/person (food + activities). <link>" or the sanitized failure |
+| `@questline build [shoestring\|comfortable\|treat]` | `POST /trips/{id}/plan-generations`, poll the generation | "Building…" then "Questline ready: N main quests, est. $X–Y/person (food + activities). <link>" or the sanitized failure; a 503 `provider_unavailable` gets "Plan building isn't available yet. Waypoints and votes are on the map: <link>" |
 | `@questline add <place>` | `POST /trips/{id}/places {query}` | "Added <resolved name> · <link>" or "Couldn't find that place — try adding the city." |
 | `@questline link` (no ID) | — | The trip link |
 | `@questline I'm <name>` | Update the sender's member name | "Got it, <name>." |
@@ -935,16 +935,20 @@ Location: `backend/scripts/seed_demo.py` and `demo/trip.json`.
 - `members`: joined through `POST /trips/{id}/members`; the organizer is created with the trip.
 - `chat`: posted through `POST /trips/{id}/import`; the script waits up to 60 seconds for the import
   job to finish and prints the "Couldn't place" list (each one is an extraction miss worth fixing).
+- `add_places` (optional): `[{"query": "..."}]`, each added through `POST /trips/{id}/places`;
+  a miss prints a warning.
 - `votes`: `place` is matched by name against the trip's waypoints; unmatched votes print a warning.
+  A vote that already exists is not re-sent (the vote endpoint toggles), so reruns are safe.
 - `build`: requests a generation with a fresh `Idempotency-Key` and polls until it succeeds or
-  fails; prints the trip link.
+  fails. The script ends by printing each new member's `X-Member-Token` and the trip link.
 
 Usage:
 
 ```sh
-python backend/scripts/seed_demo.py demo/trip.json --api http://localhost:8000
+# from backend/; --api defaults to $BASE_URL or http://localhost:8000, Bearer token from $API_TOKEN
+uv run python scripts/seed_demo.py ../demo/trip.json
 # creates a new trip, prints its link
-python backend/scripts/seed_demo.py demo/trip.json --api <url> --trip abc123 --skip-build
+uv run python scripts/seed_demo.py ../demo/trip.json --api <url> --trip <trip id> --skip-build
 # seeds into an existing trip without building
 ```
 

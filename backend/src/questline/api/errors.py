@@ -3,6 +3,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
+from questline.providers.errors import ProviderUnavailable
+
 CODES = {
     401: "unauthorized",
     403: "forbidden",
@@ -23,6 +25,13 @@ async def http_error(request: Request, exc: Exception) -> JSONResponse:
         else {"code": CODES.get(exc.status_code, "request_failed"), "message": str(detail)}
     )
     return JSONResponse({"error": error}, status_code=exc.status_code, headers=exc.headers)
+
+
+async def provider_error(request: Request, exc: Exception) -> JSONResponse:
+    assert isinstance(exc, ProviderUnavailable)
+    return JSONResponse(
+        {"error": {"code": "provider_unavailable", "message": str(exc)}}, status_code=503
+    )
 
 
 async def validation_error(request: Request, exc: Exception) -> JSONResponse:

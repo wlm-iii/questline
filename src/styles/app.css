@@ -1,0 +1,30 @@
+/* Unlayered CSS always beats layered CSS, so the pre-Tailwind stylesheets live in
+   `legacy` beneath `utilities`. Migrate a component by moving it to utilities and
+   deleting its rules from App.css. Preflight is omitted until legacy is gone. */
+@layer theme, base, legacy, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@import '../index.css' layer(base);
+@import './questline.css' layer(legacy);
+@import '../App.css' layer(legacy);
+
+@theme {
+  --color-*: initial;
+  --color-ink: #245b3c;
+  --color-bark: #6d543a;
+  --color-bark-muted: #806b48;
+  --color-line: #b69b6c;
+  --color-parchment: #e7ce93;
+  --color-parchment-deep: #d9bd83;
+  --color-card: #97714a;
+  --color-cream: #faf2e1;
+
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-heading: 'Black Chancery', Georgia, serif;
+
+  --breakpoint-*: initial;
+  --breakpoint-md: 760px;
+  --breakpoint-lg: 1100px;
+}

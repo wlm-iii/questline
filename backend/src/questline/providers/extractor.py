@@ -1,15 +1,18 @@
 """Deterministic development extraction; no AI calls or inferred votes."""
 
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import UUID
+
+from pydantic import Field
 
 from questline.schemas import MessageRead, Schema
 
 
 class Mention(Schema):
-    mention_text: str
-    search_query: str
-    message_ids: list[UUID]
+    mention_text: str = Field(min_length=1, max_length=300)
+    search_query: str = Field(min_length=1, max_length=500)
+    message_ids: list[UUID] = Field(min_length=1, max_length=10)
+    category_guess: Literal["eat", "do", "stay", "along_the_way"] | None = None
 
 
 class Extractor(Protocol):

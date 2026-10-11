@@ -5,11 +5,17 @@ from sqlalchemy import false, select
 from sqlalchemy.exc import IntegrityError
 
 from questline.api.dependencies import AccessDep, SessionDep, SettingsDep
-from questline.api.imports import enqueue_import, require_fake_extraction
-from questline.models import Import, Member, Message, Place, Trip, Vote
+from questline.api.imports import enqueue_import, require_extraction
+from questline.models import Import, Message, Place, Trip, Vote
 from questline.persistence_schemas import ChatLink, Reactions, RelayBatch
 from questline.schemas import MemberCreate, MemberRead, MessageInput, TripRead
-from questline.services.persistence import ingest, locked_trip, member_for_handle, set_vote
+from questline.services.persistence import (
+    claim_handle,
+    ingest,
+    locked_trip,
+    member_for_handle,
+    set_vote,
+)
 
 router = APIRouter(tags=["iMessage service"])
 
@@ -58,12 +64,7 @@ async def rename(
 ):
     access.require_service()
     trip = await locked_trip(session, trip_id, access)
-    member = await session.scalar(
-        select(Member).where(Member.trip_id == trip_id, Member.imessage_handle == handle)
-    )
-    if member is None:
-        raise HTTPException(404, "Member handle not found")
-    member.name = body.name
+    member = await claim_handle(session, trip_id, handle, body.name)
     trip.revision += 1
     await session.commit()
     return {"member": MemberRead.model_validate(member)}
@@ -79,7 +80,7 @@ async def batch(
     request: Request,
 ):
     access.require_service()
-    require_fake_extraction(settings)
+    require_extraction(settings)
     trip = await locked_trip(session, trip_id, access)
     if trip.imessage_chat_guid is None:
         raise HTTPException(409, "Chat must be linked before ingestion")

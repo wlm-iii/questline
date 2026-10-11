@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     google_maps_api_key: SecretStr | None = None
     max_transcript_chars: int = Field(default=100_000, ge=1)
+    planner_detour_limit: int = Field(default=5, ge=0, le=20)
+    planner_suggestion_query_limit: int = Field(default=2, ge=0, le=2)
+    planner_suggestion_limit: int = Field(default=4, ge=0, le=4)
 
     @field_validator("database_url")
     @classmethod

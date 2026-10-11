@@ -8,14 +8,16 @@ from sqlalchemy import select
 from questline.api.dependencies import AccessDep, SessionDep, SettingsDep
 from questline.models import Import, Message
 from questline.persistence_schemas import ImportCreate
+from questline.providers.selection import extractor_for_settings, maps_for_settings
 from questline.services.persistence import ingest, locked_trip, parse_chat
 
 router = APIRouter(tags=["imports"])
 
 
-def require_fake_extraction(settings):
-    if settings.planner_provider != "fake" or settings.maps_provider != "fake":
-        raise HTTPException(503, "Real extraction providers are not implemented yet")
+def require_extraction(settings):
+    # Validate configuration before saving input/enqueuing; no paid calls here.
+    extractor_for_settings(settings)
+    maps_for_settings(settings)
 
 
 async def enqueue_import(session, request, trip, imported, external_ids):
@@ -44,7 +46,7 @@ async def import_chat(
     access: AccessDep,
     request: Request,
 ):
-    require_fake_extraction(settings)
+    require_extraction(settings)
     trip = await locked_trip(session, trip_id, access)
     if len(body.text) > settings.max_transcript_chars:
         raise HTTPException(413, "Import text is too large")

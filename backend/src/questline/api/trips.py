@@ -20,7 +20,7 @@ from questline.models import (
     Vote,
 )
 from questline.persistence_schemas import CheckinRead, ImportRead, PlaceRead, TaskRead, VoteRead
-from questline.providers.maps import FakeMaps
+from questline.providers.selection import maps_for_settings
 from questline.schemas import (
     IngestResult,
     JoinResult,
@@ -47,13 +47,16 @@ def add_member(session, trip_id: UUID, name: str) -> tuple[Member, str]:
 
 @router.post("", response_model=TripCreated, status_code=201)
 async def create_trip(body: TripCreate, session: SessionDep, settings: SettingsDep):
-    if settings.maps_provider != "fake":
-        raise HTTPException(503, "Google Maps provider is not implemented yet")
-    maps = FakeMaps()
+    maps = maps_for_settings(settings)
     origin = await maps.resolve_endpoint(body.origin)
     destination = await maps.resolve_endpoint(body.destination)
     if origin is None or destination is None:
-        raise HTTPException(422, "Fake Maps supports only San Jose, CA and Big Sur, CA")
+        message = (
+            "Fake Maps supports only San Jose, CA and Big Sur, CA"
+            if settings.maps_provider == "fake"
+            else "Couldn't resolve origin or destination. Try including the city or region."
+        )
+        raise HTTPException(422, message)
     trip = Trip(
         name=body.name,
         origin=origin.model_dump(),

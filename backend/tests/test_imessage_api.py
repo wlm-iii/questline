@@ -196,7 +196,7 @@ async def test_get_plan_summarizes_main_quests_and_estimate():
         lambda r: httpx.Response(200, json={"plan": {"id": str(plan_id), "content": content}})
     )
     assert await client.get_plan(plan_id) == PlanSummary(
-        main_quests=2, estimate=(40, 85), estimate_is_partial=True
+        main_quests=2, side_quests=1, estimate=(40, 85), estimate_is_partial=True
     )
     assert requests[0].url.path == f"/api/v1/plans/{plan_id}"
 

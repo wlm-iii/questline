@@ -1,0 +1,63 @@
+import type { Trip } from '../../demo/types'
+
+export type TripSettingsDialogProps = {
+  trip: Trip
+  onSaveTrip: (trip: Trip) => void
+}
+export function TripSettingsDialog({
+  trip,
+  onSaveTrip,
+}: TripSettingsDialogProps) {
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        const data = new FormData(e.currentTarget)
+        onSaveTrip({
+          name: String(data.get('name')).trim(),
+          date: String(data.get('date')),
+          destination: String(data.get('destination')).trim(),
+          budget: Number(data.get('budget')),
+        })
+      }}
+    >
+      <span className="eyebrow">MAKE IT YOURS</span>
+      <h2>Every adventure starts with a plan.</h2>
+      <label>
+        Trip name
+        <input name="name" required maxLength={70} defaultValue={trip.name} />
+      </label>
+      <div className="form-columns">
+        <label>
+          Date
+          <input name="date" type="date" required defaultValue={trip.date} />
+        </label>
+        <label>
+          Daily budget / person ($)
+          <input
+            name="budget"
+            type="number"
+            min="1"
+            max="10000"
+            required
+            defaultValue={trip.budget}
+          />
+        </label>
+      </div>
+      <label>
+        Destination
+        <input
+          name="destination"
+          required
+          maxLength={100}
+          defaultValue={trip.destination}
+        />
+      </label>
+      <p>
+        Changing the destination updates your trip label. The illustrated map
+        remains San Francisco.
+      </p>
+      <button className="primary">Save trip details →</button>
+    </form>
+  )
+}

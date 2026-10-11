@@ -1,19 +1,29 @@
+import asyncio
 import logging
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from questline.models import Import, Message, Place, Trip
-from questline.providers.extractor import FakeExtractor
-from questline.providers.maps import FakeMaps
-from questline.schemas import MessageRead
+from questline.config import Settings
+from questline.models import Import, Member, Message, Place, Trip
+from questline.providers.extractor import Extractor, FakeExtractor
+from questline.providers.maps import FakeMaps, MapsProvider, SearchBounds
+from questline.providers.selection import extractor_for_settings, maps_for_settings
+from questline.schemas import Endpoint, MessageRead
 from questline.services.persistence import upsert_place
 
 logger = logging.getLogger(__name__)
 
 
-async def extract_places(import_id: UUID, sessions: async_sessionmaker[AsyncSession]) -> None:
+async def extract_places(
+    import_id: UUID,
+    sessions: async_sessionmaker[AsyncSession],
+    *,
+    settings: Settings | None = None,
+    extractor: Extractor | None = None,
+    maps: MapsProvider | None = None,
+) -> None:
     async with sessions() as session:
         imported = await session.get(Import, import_id)
         if imported is None:
@@ -33,17 +43,37 @@ async def extract_places(import_id: UUID, sessions: async_sessionmaker[AsyncSess
             )
         ).all()
         inputs = [MessageRead.model_validate(m) for m in messages]
+        bounds = (
+            SearchBounds.for_trip(
+                Endpoint.model_validate(trip.origin), Endpoint.model_validate(trip.destination)
+            )
+            if trip.origin and trip.destination
+            else None
+        )
+        # The trip's own start and end are endpoints on the map, never waypoints.
+        endpoint_ids = {
+            endpoint["google_place_id"] for endpoint in (trip.origin, trip.destination) if endpoint
+        }
         trip.revision += 1
         await session.commit()
     try:
         # Provider calls never hold the trip's transaction open.
-        mentions = await FakeExtractor().extract(inputs)
-        resolved = [
-            (mention, await FakeMaps().resolve_place(mention.search_query)) for mention in mentions
-        ]
-        allowed_ids = {m.id for m in inputs}
-        if any(mid not in allowed_ids for mention, _ in resolved for mid in mention.message_ids):
-            raise ValueError("Extractor referenced messages outside this import")
+        extractor = extractor or (extractor_for_settings(settings) if settings else FakeExtractor())
+        maps = maps or (maps_for_settings(settings) if settings else FakeMaps())
+        async with asyncio.timeout(120):
+            mentions = await extractor.extract(inputs)
+            allowed_ids = {m.id for m in inputs}
+            if any(mid not in allowed_ids for mention in mentions for mid in mention.message_ids):
+                raise ValueError("Extractor referenced messages outside this import")
+            resolved = [
+                (
+                    mention,
+                    await maps.resolve_place(
+                        mention.search_query, bounds=bounds, mention_text=mention.mention_text
+                    ),
+                )
+                for mention in mentions
+            ]
         async with sessions() as session:
             imported = await session.get(Import, import_id)
             assert imported is not None
@@ -62,8 +92,12 @@ async def extract_places(import_id: UUID, sessions: async_sessionmaker[AsyncSess
                     if entry not in unresolved:
                         unresolved.append(entry)
                     continue
+                if result.google_place_id in endpoint_ids:
+                    continue
                 first = await session.get(Message, mention.message_ids[0])
                 assert first is not None
+                # iMessage authors are handles (phone numbers, emails); show the member's name.
+                author = await session.get(Member, first.member_id) if first.member_id else None
                 await upsert_place(
                     session,
                     trip.id,
@@ -71,7 +105,7 @@ async def extract_places(import_id: UUID, sessions: async_sessionmaker[AsyncSess
                     source="group",
                     message_ids=mention.message_ids,
                     member_id=first.member_id,
-                    author_name=first.author_id,
+                    author_name=author.name if author else first.author_id,
                 )
             # Replies are evidence, never guessed votes. Parents may arrive in later imports.
             all_messages = (

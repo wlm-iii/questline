@@ -267,7 +267,9 @@ class Relay:
                 try:
                     name = await self.api.add_place(trip_id, query)
                 except NotFound:
-                    await self._reply(chat_guid, "Couldn't find that place — try adding the city.")
+                    await self._reply(
+                        chat_guid, "Couldn't find that place near this trip — try adding the city."
+                    )
                     return
                 await self._reply(chat_guid, f"Added {name} · {self._trip_url(trip_id)}")
             case SetName(name=name):
@@ -328,14 +330,24 @@ class Relay:
             await self._reply(chat_guid, self._ready_text(plan, trip_id))
         except Conflict as exc:
             await self._reply(chat_guid, f"Can't build right now: {exc.message}")
-        except Unavailable:
-            await self._reply(chat_guid, UNREACHABLE)
+        except Unavailable as exc:
+            # The backend is up but its planner isn't configured or built yet; not an outage.
+            if exc.code == "provider_unavailable":
+                await self._reply(
+                    chat_guid,
+                    "Plan building isn't available yet. Waypoints and votes are on the map: "
+                    f"{self._trip_url(trip_id)}",
+                )
+            else:
+                await self._reply(chat_guid, UNREACHABLE)
         except ApiError as exc:
             logger.error("Build failed for trip %s: %s", trip_id, exc)
             await self._reply(chat_guid, "Build failed — try again.")
 
     def _ready_text(self, plan: PlanSummary, trip_id: str) -> str:
         quests = f"{plan.main_quests} main quest{'' if plan.main_quests == 1 else 's'}"
+        if plan.side_quests:
+            quests += f" + {plan.side_quests} side quest{'' if plan.side_quests == 1 else 's'}"
         estimate = ""
         if plan.estimate is not None:
             low, high = plan.estimate
@@ -343,7 +355,19 @@ class Relay:
             if plan.estimate_is_partial:
                 scope += "; some stops unpriced"
             estimate = f", est. ${low:.0f}–{high:.0f}/person ({scope})"
-        return f"Questline ready: {quests}{estimate}. {self._trip_url(trip_id)}"
+        notes = ""
+        if plan.changes:
+            shown = [change[:1].lower() + change[1:] for change in plan.changes[:2]]
+            more = len(plan.changes) - len(shown)
+            text = "; ".join(shown) + (f"; and {more} more" if more else "")
+            notes += (
+                " No changes since the last build."
+                if plan.changes == ["No changes from the previous questline"]
+                else f" Changed: {text}."
+            )
+        if plan.contested:
+            notes += f" Split votes: {', '.join(plan.contested)} — resolve on the map."
+        return f"Questline ready: {quests}{estimate}.{notes} {self._trip_url(trip_id)}"
 
     async def wait_for_tasks(self) -> None:
         while self._tasks:
