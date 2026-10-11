@@ -9,7 +9,7 @@ The product and implementation spec is in [docs/SPEC.md](docs/SPEC.md).
 
 ## Stack and current scope
 
-- **React + TypeScript + Vite** + TailwindCSS frontend scaffold at the repository root.
+- **React + TypeScript + Vite** + TailwindCSS frontend in `frontend/`.
 - **Python 3.12 + FastAPI**, Pydantic, SQLAlchemy, psycopg, and Alembic.
 - **PostgreSQL**, hosted on Supabase for a shared environment or Docker locally.
 - **Procrastinate** for durable PostgreSQL-backed background jobs; no Redis required.
@@ -28,15 +28,22 @@ for the scaffold's current boundaries, limitations, and suggested work streams.
 
 ## Frontend development
 
+The frontend is self-contained in `frontend/`: React source (`src/`), static assets
+(`public/`), the HTML entry point, npm manifests, and Vite/TypeScript/ESLint configuration.
+Frontend environment variables belong in `frontend/.env.local`; backend secrets stay in
+`backend/.env`. Existing root-level frontend env files should be moved into `frontend/`.
+Run Docker Compose and repository-wide tooling from the repository root as before.
+
 From the repository root, using Node.js and npm (also available in `nix develop`):
 
 ```sh
+cd frontend
 npm ci
 npm run dev
 ```
 
 Vite serves the frontend at <http://localhost:5173> by default. Run the backend separately using
-one of the workflows below. `src/Root.tsx` picks the screen from the URL:
+one of the workflows below. `frontend/src/Root.tsx` picks the screen from the URL:
 
 | Route | Screen |
 | --- | --- |
@@ -53,7 +60,7 @@ create form are saved in this browser only; the backend doesn't store them.
 
 The client calls same-origin `/api/v1/...`, and the Vite dev and preview servers proxy `/api` to
 `http://127.0.0.1:8000`, so no CORS setup is needed locally. To change either side, set these in
-`.env.local` and restart `npm run dev`:
+`frontend/.env.local` and restart `npm run dev` from `frontend/`:
 
 ```sh
 # Dev/preview proxy target, for example when Compose uses API_PORT=58000. Never bundled.
@@ -64,19 +71,19 @@ VITE_API_BASE_URL=https://api.example.com
 ```
 
 Browsers authenticate with the member token returned by create/join, sent as `X-Member-Token`, and
-stored per trip in local storage (`src/api/session.ts`). Never use `API_TOKEN` in the frontend.
+stored per trip in local storage (`frontend/src/api/session.ts`). Never use `API_TOKEN` in the frontend.
 
 Shared trip links have the form `/t/<tripId>`; anyone with the link can see the trip and join it
-by name. Vite's dev and preview servers already serve `index.html` for every route; a static host
+by name. Vite's dev and preview servers already serve `frontend/index.html` for every route; a static host
 needs equivalent rewrites of `/t/*` and `/demo` to `index.html`.
-`src/state/` holds the session hook (create, join, rejoin after a rejected token) and a trip
+`frontend/src/state/` holds the session hook (create, join, rejoin after a rejected token) and a trip
 provider that polls `GET /trips/{id}?revision=N` every 3 seconds while the tab is visible.
 
 ### Frontend composition
 
-`src/App.tsx` owns the demo's state, persistence, and actions. `src/trip/TripApp.tsx` is the live
+`frontend/src/App.tsx` owns the demo's state, persistence, and actions. `frontend/src/trip/TripApp.tsx` is the live
 trip's container: it reads `useTrip()` and passes plain props to the same panels, using adapters
-such as `src/trip/tripHeadingAdapter.ts` so panels never see API types. Individual panels receive
+such as `frontend/src/trip/tripHeadingAdapter.ts` so panels never see API types. Individual panels receive
 typed props and action callbacks; the planning desk and overview compose panels through named slots.
 See [UI composition](docs/ui-composition.md) for the component inventory, relocation examples,
 and the styling boundaries to preserve when rearranging the page.
@@ -84,8 +91,8 @@ and the styling boundaries to preserve when rearranging the page.
 ### Google map (optional)
 
 The map view uses the Maps JavaScript API when a browser key is configured, and falls back to the
-illustrated demo map when it isn't, so the frontend runs without a key. Create `.env.local` at the
-repository root (gitignored) and restart `npm run dev`:
+illustrated demo map when it isn't, so the frontend runs without a key. Create `frontend/.env.local`
+(gitignored) and restart `npm run dev` from `frontend/`:
 
 ```sh
 VITE_GOOGLE_MAPS_BROWSER_KEY=your-browser-key
@@ -95,22 +102,24 @@ VITE_GOOGLE_MAP_ID=
 
 `VITE_*` values are bundled into the browser, so use a key restricted by HTTP referrer to the
 Maps JavaScript API. Never put the backend's server key, `API_TOKEN`, or `DATABASE_URL` in a
-`VITE_*` variable. The map code lives in `src/features/map/`; `QuestMap` takes plain stop data
+`VITE_*` variable. The map code lives in `frontend/src/features/map/`; `QuestMap` takes plain stop data
 (`id`, `name`, `side`, `done`, `lat`, `lng`), so the rest of the UI can change without touching it.
 Stops without coordinates are counted but not plotted. A live trip's map draws the plan's routed
 legs (solid) and side-quest detours (dashed); the offline demo draws straight lines.
 
 ### Styling
 
-New UI is styled with [Tailwind CSS](https://tailwindcss.com) v4. `src/styles/app.css` is the
+New UI is styled with [Tailwind CSS](https://tailwindcss.com) v4. `frontend/src/styles/app.css` is the
 single stylesheet entry: it defines the design tokens (`@theme` colors, fonts, and breakpoints)
-and loads the older hand-written CSS (`src/App.css`, `src/styles/questline.css`) into a `legacy`
+and loads the older hand-written CSS (`frontend/src/App.css`, `frontend/src/styles/questline.css`) into a `legacy`
 cascade layer beneath Tailwind's utilities, so a utility class always wins over a legacy rule.
 To migrate a component, style it with utilities and delete its rules from `App.css`
-(`src/components/AppHeader.tsx` is the first example). Tailwind's Preflight reset is not loaded
+(`frontend/src/components/AppHeader.tsx` is the first example). Tailwind's Preflight reset is not loaded
 yet, so set things like button backgrounds explicitly.
 
 Frontend checks and production preview:
+
+From `frontend/`:
 
 ```sh
 npm run lint
@@ -118,9 +127,9 @@ npm run build
 npm run preview
 ```
 
-`npm run build` type-checks the frontend and writes the production build to `dist/`.
+`npm run build` type-checks the frontend and writes the production build to `frontend/dist/`.
 `npm run preview` serves that build locally; it is not a production deployment server.
-Commit `package-lock.json` when dependencies change.
+Commit `frontend/package-lock.json` when dependencies change.
 
 ## Quick start: backend in Docker
 
@@ -534,7 +543,7 @@ to divide implementation without duplicating responsibilities.
 
 The starter screen is a responsive component preview with explicitly labeled demo data. It reuses
 Paper UI `Card`, `Button`, and `Stamp`; the sample card's View quest action toggles local preview
-text, not backend data. Shared styling lives in `src/styles/questline.css`, loaded after Paper UI.
+text, not backend data. Shared styling lives in `frontend/src/styles/questline.css`, loaded after Paper UI.
 The scoped adapter selectors for Paper UI's internal texture/label layers should be checked when
 upgrading that package.
 
@@ -542,22 +551,23 @@ Kenney RPG expansion panels and buttons use sliced image borders with the origin
 so edges retain their size as components grow. Quest cards pair a brown outer panel with a
 notched parchment inset and raised grey buttons, matching the supplied pack reference. Parchment (`#ECE3CE`), leather (`#D3BF8F`), frame (`#B7916A`), ink (`#6D543A`),
 and gold (`#CDA400`) come from the supplied pack. Forest, quest green, ocean blue, sage, and skipped
-red retain their existing design values. A local, seamless SVG parchment texture (`public/ui/textures/parchment.svg`) adds warm mottling
+red retain their existing design values. A local, seamless SVG parchment texture (`frontend/public/ui/textures/parchment.svg`) adds warm mottling
 and fine fibers to the page background, with CSS gradients for darker edges and a lighter reading
 area. Component grain remains subtle. The frontend uses ordinary CSS; Tailwind is not configured
 as a project dependency or Vite plugin. Stamp rings use
 content-sized CSS ovals with padding to keep the strokes clear of text, including wrapped labels.
 
 Black Chancery is self-hosted for headings, stamps, and buttons; body copy uses system sans-serif.
-Assets and original notices are in `public/ui/kenney/` (Kenney, CC0) and `public/fonts/` (the supplied
+Assets and original notices are in `frontend/public/ui/kenney/` (Kenney, CC0) and `frontend/public/fonts/` (the supplied
 Black Chancery font and its accompanying notes). No remote font service or new dependency is needed.
 Paper UI's distributed stylesheet references an unused `Luminari-Regular.woff`; Vite may report that
 unresolved reference during builds. This theme uses the supplied Black Chancery font instead.
 
 ## Live UI preview
 
-Run `npm run dev -- --host 127.0.0.1 --port 5175` from this repository and open
-http://localhost:5175. This serves the connected development checkout with hot reload.
-The UI starts with trip setup and includes route review, tier rankings, member voting, and
-a packing checklist. Changes save locally; shared backend synchronization is not connected.
-Google Maps uses the existing Vite configuration when a browser key is configured.
+Run `npm run dev -- --host 127.0.0.1 --port 5175` from `frontend/` and open
+<http://localhost:5175>. This serves the frontend checkout with hot reload.
+The main page creates and joins shared trips through FastAPI; run the backend using
+one of the workflows above. For a local UI preview without the backend, open
+<http://localhost:5175/demo>. The demo saves changes on this device.
+Google Maps uses the configured browser key in `frontend/.env.local` when available.

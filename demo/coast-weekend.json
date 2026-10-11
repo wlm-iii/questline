@@ -1,0 +1,23 @@
+{
+  "trip": {
+    "name": "Coast weekend",
+    "origin": "San Jose, CA",
+    "destination": "Big Sur, CA",
+    "start_date": "2026-10-17",
+    "end_date": "2026-10-18",
+    "timezone": "America/Los_Angeles",
+    "organizer_name": "Maya"
+  },
+  "members": ["Sam", "Jordan"],
+  "chat": "Maya: Coast weekend is on. Leave San Jose Saturday morning, stay around Big Sur, head back Sunday.\nMaya: McWay Falls is the one stop I care about. The waterfall onto the beach.\nSam: McWay Falls parking is tiny. I would rather skip it than sit in a turnout.\nJordan: Big Sur Bakery for breakfast Saturday. The wood oven stuff is the reason I come.\nMaya: Bakery first, then the falls if we still want them.\nSam: Bixby Bridge on the drive down, photos only, not a long stop.\nJordan: Pfeiffer Beach if we have time. Purple sand, and it is a detour.\nSam: Mystery Cafe in Carmel came up in another chat. I have never been.\nJordan: Nepenthe for dinner Saturday if we are doing the view. It is the expensive one.\nMaya: Dinner at Nepenthe is a treat, not the default. We can drop it if the day runs long.\n",
+  "add_places": [{ "query": "Big Sur Bakery" }],
+  "votes": [
+    { "member": "Maya", "place": "McWay Falls", "kind": "in" },
+    { "member": "Sam", "place": "McWay Falls", "kind": "out" },
+    { "member": "Jordan", "place": "McWay Falls", "kind": "ok" },
+    { "member": "Maya", "place": "Big Sur Bakery", "kind": "in" },
+    { "member": "Jordan", "place": "Big Sur Bakery", "kind": "in" },
+    { "member": "Sam", "place": "Big Sur Bakery", "kind": "ok" }
+  ],
+  "build": { "budget_preset": "treat" }
+}

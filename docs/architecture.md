@@ -23,6 +23,7 @@ jobs with FastAPI BackgroundTasks. Migrations and queue setup must run before ei
 
 | Path | Responsibility |
 | --- | --- |
+| `frontend/` | React UI, static assets, npm manifests, and frontend tooling |
 | `backend/src/questline/api/` | HTTP contracts, validation, access gate, status codes |
 | `backend/src/questline/schemas.py` | Shared request, transcript, and graph schemas |
 | `backend/src/questline/models.py` | PostgreSQL persistence |
