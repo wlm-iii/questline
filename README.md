@@ -56,6 +56,11 @@ VITE_API_BASE_URL=https://api.example.com
 Browsers authenticate with the member token returned by create/join, sent as `X-Member-Token`, and
 stored per trip in local storage (`src/api/session.ts`). Never use `API_TOKEN` in the frontend.
 
+Shared trip links have the form `/t/<tripId>`. Vite's dev and preview servers already serve
+`index.html` for them; a static host needs an equivalent rewrite of `/t/*` to `index.html`.
+`src/state/` holds the session hook (create, join, rejoin after a rejected token) and a trip
+provider that polls `GET /trips/{id}?revision=N` every 3 seconds while the tab is visible.
+
 ### Google map (optional)
 
 The map view uses the Maps JavaScript API when a browser key is configured, and falls back to the
