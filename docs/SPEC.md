@@ -698,7 +698,7 @@ with "🧭 Questline:" so the group can tell them apart. A dedicated bot Apple I
 | `@questline link` (no ID) | — | The trip link |
 | `@questline I'm <name>` | Update the sender's member name | "Got it, <name>." |
 | `@questline import last N` | `fetch_transcript` → `imessage/batch` (N ≤ 300) | "Imported N messages · <link>" |
-| `@questline unlink` | `DELETE /trips/{id}/channels/imessage` | "Stopped reading this chat." |
+| `@questline unlink` | `DELETE /trips/{id}/channels/imessage` | "Stopped reading this chat. The trip is still on the map: <link>" |
 | anything else | — | Short usage help (Stretch: Q&A) |
 
 Trips are created on the web (§3 step 1) so origin/destination validation stays in one place; the
