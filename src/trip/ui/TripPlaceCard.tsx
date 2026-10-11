@@ -1,10 +1,17 @@
+import type { VoteKind } from '../../api'
 import { QuestButton } from '../../components/QuestButton'
 import type { StopView } from '../adapters'
 import { StatusBadge } from './StatusBadge'
+import { VoteButtons } from './VoteButtons'
 
-export type TripPlaceCardProps = { stop: StopView; onView: () => void }
+export type TripPlaceCardProps = {
+  stop: StopView
+  voting: boolean
+  onVote: (stop: StopView, kind: VoteKind) => void
+  onView: () => void
+}
 
-export function TripPlaceCard({ stop, onView }: TripPlaceCardProps) {
+export function TripPlaceCard({ stop, voting, onVote, onView }: TripPlaceCardProps) {
   const quote = stop.quotes[0]
   const number = stop.status === 'main' && stop.number ? String(stop.number).padStart(2, '0') : stop.status === 'side' ? '✧' : '—'
   return (
@@ -21,9 +28,12 @@ export function TripPlaceCard({ stop, onView }: TripPlaceCardProps) {
         <p className="quest-description">
           {quote ? `“${quote.text}” — ${quote.author}` : stop.mentionedBy ? `Mentioned by ${stop.mentionedBy}` : stop.sourceLabel}
         </p>
+        {stop.why && <p className="quest-description">Why: {stop.why}</p>}
       </div>
+      <VoteButtons stop={stop} pending={voting} onVote={onVote} />
       <div className="quest-card-footer">
         <span>
+          {stop.arrive && `Arrive ${stop.arrive} · `}
           {stop.cost}
           {stop.detour && ` · ${stop.detour}`}
           {stop.done && ' · ✓ Complete'}

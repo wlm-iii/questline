@@ -30,11 +30,18 @@ type PlottedStop<Id extends string | number> = MapStop<Id> & { lat: number; lng:
 type GoogleMap = NonNullable<ReturnType<typeof useMap>>
 type LatLng = { lat: number; lng: number }
 
+/** A drawn leg: `travel` is the main quest route (solid), `detour` a side-quest branch (dashed). */
+export type MapRoute = { id: string; kind: 'travel' | 'detour'; path: LatLng[] }
+
 type QuestMapProps<Id extends string | number> = {
   stops: MapStop<Id>[]
   selectedId: Id | null
   onSelect: (id: Id) => void
+  /** Explicit legs, e.g. routed polylines from a plan. Stops then need `route: false`. */
+  routes?: MapRoute[]
 }
+
+const DASHED = [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: '#7a97a9', scale: 3 }, offset: '0', repeat: '14px' }]
 
 const FIT_PADDING = 80
 const SAN_FRANCISCO = { lat: 37.7749, lng: -122.4194 }
@@ -92,7 +99,7 @@ function MapControls({ stops }: { stops: LatLng[] }) {
   )
 }
 
-export function QuestMap<Id extends string | number>({ stops, selectedId, onSelect }: QuestMapProps<Id>) {
+export function QuestMap<Id extends string | number>({ stops, selectedId, onSelect, routes = [] }: QuestMapProps<Id>) {
   const plotted = useMemo(() => stops.filter(isPlotted), [stops])
   const questStops = plotted.filter(s => (s.kind ?? 'stop') === 'stop')
   const main = questStops.filter(s => !s.side)
@@ -139,8 +146,17 @@ export function QuestMap<Id extends string | number>({ stops, selectedId, onSele
               key={`detour-${s.id}`}
               path={[nearest(s, routed), s]}
               strokeOpacity={0}
-              icons={[{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: '#7a97a9', scale: 3 }, offset: '0', repeat: '14px' }]}
+              icons={DASHED}
             />
+          ))}
+          {routes.filter(r => r.kind === 'detour').map(r => (
+            <Polyline key={r.id} path={r.path} strokeOpacity={0} icons={DASHED} />
+          ))}
+          {routes.filter(r => r.kind === 'travel').map(r => (
+            <Polyline key={`${r.id}-halo`} path={r.path} strokeColor="#fff4d6" strokeWeight={10} strokeOpacity={0.9} />
+          ))}
+          {routes.filter(r => r.kind === 'travel').map(r => (
+            <Polyline key={r.id} path={r.path} strokeColor="#9a7542" strokeWeight={5} strokeOpacity={1} />
           ))}
           {routed.length > 1 && <Polyline path={routed} strokeColor="#fff4d6" strokeWeight={10} strokeOpacity={0.9} />}
           {routed.length > 1 && <Polyline path={routed} strokeColor="#9a7542" strokeWeight={5} strokeOpacity={1} />}
