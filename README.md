@@ -338,3 +338,11 @@ Assets and original notices are in `public/ui/kenney/` (Kenney, CC0) and `public
 Black Chancery font and its accompanying notes). No remote font service or new dependency is needed.
 Paper UI's distributed stylesheet references an unused `Luminari-Regular.woff`; Vite may report that
 unresolved reference during builds. This theme uses the supplied Black Chancery font instead.
+
+## Live UI preview
+
+Run `npm run dev -- --host 127.0.0.1 --port 5175` from this repository and open
+http://localhost:5175. This serves the connected development checkout with hot reload.
+The UI starts with trip setup and includes route review, tier rankings, member voting, and
+a packing checklist. Changes save locally; shared backend synchronization is not connected.
+Google Maps uses the existing Vite configuration when a browser key is configured.
