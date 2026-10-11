@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import type { Stop, Trip } from './demo/types'
+import { initialStops, sampleCoords } from './demo/data'
+import { useSaved } from './lib/useSaved'
 import { QuestCard } from './components/QuestCard'
 import { PlannerHeader, SetupHeader } from './components/AppHeader'
 import { QuestBadge } from './components/QuestBadge'
@@ -8,23 +11,6 @@ import { tiers, type Tier } from './components/tiers'
 import { QuestMap } from './features/map/QuestMap'
 import { googleMapsEnabled } from './features/map/config'
 
-type Stop = { id: number; name: string; category: string; description: string; price: number; x: number; y: number; side: boolean; votes: number; time: string; lat?: number; lng?: number }
-const initialStops: Stop[] = [
-  { id: 1, name: 'Tartine Bakery', category: 'Eat', description: 'Coffee, pastries, and a very good start.', price: 18, x: 38, y: 70, side: false, votes: 4, time: '9:00 AM', lat: 37.7614, lng: -122.4241 },
-  { id: 2, name: 'Mission Dolores Park', category: 'Do', description: 'A little sunshine. A big city view.', price: 0, x: 32, y: 82, side: false, votes: 4, time: '10:00 AM', lat: 37.7596, lng: -122.4269 },
-  { id: 3, name: 'Painted Ladies', category: 'Do', description: 'The postcard stop, with a picnic on the lawn.', price: 0, x: 45, y: 45, side: false, votes: 3, time: '11:30 AM', lat: 37.7763, lng: -122.4328 },
-  { id: 4, name: 'Japan Center', category: 'Eat', description: 'Ramen, little shops, and something sweet.', price: 25, x: 58, y: 30, side: false, votes: 4, time: '1:00 PM', lat: 37.7853, lng: -122.4296 },
-  { id: 5, name: 'Sutro Baths', category: 'Do', description: 'Take the scenic detour out to the ocean.', price: 0, x: 15, y: 23, side: true, votes: 2, time: '+45 min', lat: 37.7804, lng: -122.5137 },
-]
-const sampleCoords = Object.fromEntries(initialStops.map(s => [s.id, { lat: s.lat, lng: s.lng }]))
-type Trip = { name: string; date: string; destination: string; budget: number }
-function useSaved<T,>(key: string, fallback: T) {
-  const [value, setValue] = useState<T>(() => {
-    try { const saved = localStorage.getItem(key); return saved ? JSON.parse(saved) as T : fallback } catch { return fallback }
-  })
-  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* Storage may be unavailable in private sessions. */ } }, [key, value])
-  return [value, setValue] as const
-}
 function App() {
   const [stops, setStops] = useSaved<Stop[]>('questline-stops', initialStops)
   const [selected, setSelected] = useState(1)
