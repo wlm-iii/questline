@@ -267,7 +267,9 @@ class Relay:
                 try:
                     name = await self.api.add_place(trip_id, query)
                 except NotFound:
-                    await self._reply(chat_guid, "Couldn't find that place near this trip — try adding the city.")
+                    await self._reply(
+                        chat_guid, "Couldn't find that place near this trip — try adding the city."
+                    )
                     return
                 await self._reply(chat_guid, f"Added {name} · {self._trip_url(trip_id)}")
             case SetName(name=name):
