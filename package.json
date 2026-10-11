@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@dendelion/paper-ui": "^0.23.2",
+    "@vis.gl/react-google-maps": "^1.10.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
