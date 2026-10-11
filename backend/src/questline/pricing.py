@@ -20,9 +20,9 @@ RANGES: dict[str, dict[int, tuple[float, float]]] = {
     "eat": {0: (0, 0), 1: (10, 20), 2: (20, 40), 3: (40, 75), 4: (75, 150)},
     "do": {0: (0, 0), 1: (5, 20), 2: (20, 40), 3: (40, 80), 4: (80, 150)},
 }
-RANGES["along_the_way"] = RANGES["do"]
 
 PRESET_MAX_LEVEL: dict[str, int] = {"shoestring": 1, "comfortable": 2, "treat": 4}
+PRESET_TARGETS = {"shoestring": (30, 20), "comfortable": (70, 60), "treat": (150, 150)}
 PRESET_LABELS = {
     "shoestring": "Shoestring",
     "comfortable": "Comfortable",
@@ -39,8 +39,24 @@ def estimate(category: str, price_level: int | None) -> tuple[float, float, str]
     if price_level is None or category not in RANGES:
         return None
     low, high = RANGES[category][price_level]
-    basis = f"App estimate from Google price level {dollar_signs(price_level)}; per adult"
+    basis = (
+        f"App estimate from coarse price level {dollar_signs(price_level)}; per adult, not a quote"
+    )
     return low, high, basis
+
+
+def is_app_estimate(basis: str | None) -> bool:
+    return bool(basis and basis.startswith(("App estimate", "App price-level estimate")))
+
+
+def apply_estimate(place: dict) -> None:
+    """Recompute coarse estimates, but never overwrite explicit supplied ranges."""
+    if place.get("est_cost_low") is not None and not is_app_estimate(place.get("cost_basis")):
+        return
+    cost = estimate(place["category"], place.get("price_level"))
+    place["est_cost_low"], place["est_cost_high"], place["cost_basis"] = (
+        cost if cost else (None, None, None)
+    )
 
 
 def over_budget(price_level: int | None, preset: str) -> bool:

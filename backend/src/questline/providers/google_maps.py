@@ -4,6 +4,7 @@ import asyncio
 import math
 import re
 import unicodedata
+from urllib.parse import quote
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -16,8 +17,9 @@ from questline.schemas import Endpoint
 SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 FIELD_MASK = (
     "places.id,places.displayName,places.formattedAddress,places.location,"
-    "places.googleMapsUri,places.types,places.priceLevel"
+    "places.googleMapsUri,places.types"
 )
+WAYPOINT_FIELD_MASK = FIELD_MASK + ",places.priceLevel"
 
 
 class MapsUnavailable(ProviderUnavailable):
@@ -73,7 +75,9 @@ class GoogleMaps:
         self._api_key = api_key
         self._transport = transport
 
-    async def _search(self, query: str, bounds: SearchBounds | None = None) -> GooglePlace | None:
+    async def _search(
+        self, query: str, bounds: SearchBounds | None = None, *, prices: bool = False
+    ) -> GooglePlace | None:
         if not query.strip():
             return None
         # One result is the Build contract; expose its resolved label, not a claim
@@ -90,7 +94,10 @@ class GoogleMaps:
             ):
                 response = await client.post(
                     SEARCH_URL,
-                    headers={"X-Goog-Api-Key": self._api_key, "X-Goog-FieldMask": FIELD_MASK},
+                    headers={
+                        "X-Goog-Api-Key": self._api_key,
+                        "X-Goog-FieldMask": WAYPOINT_FIELD_MASK if prices else FIELD_MASK,
+                    },
                     json=body,
                 )
             if response.status_code != 200:
@@ -121,7 +128,7 @@ class GoogleMaps:
     ) -> ResolvedPlace | None:
         if mention_text is not None and bounds is None:
             return None  # Legacy trips without endpoints cannot ground imported mentions.
-        place = await self._search(query, bounds)
+        place = await self._search(query, bounds, prices=True)
         if place is None:
             return None
         if bounds is not None and not bounds.contains(
@@ -138,6 +145,10 @@ class GoogleMaps:
             matched = mentioned & tokens(place.displayName.text)
             if not mentioned or len(matched) < math.ceil(len(mentioned) * 0.6):
                 return None
+        return self._resolved(place)
+
+    @staticmethod
+    def _resolved(place: GooglePlace) -> ResolvedPlace:
         kind = category(place.types)
         level = GOOGLE_PRICE_LEVELS.get(place.priceLevel or "")
         cost = estimate(kind, level)
@@ -154,3 +165,63 @@ class GoogleMaps:
             est_cost_high=cost[1] if cost else None,
             cost_basis=cost[2] if cost else None,
         )
+
+    async def price_level(self, google_place_id: str) -> int | None:
+        try:
+            async with (
+                asyncio.timeout(12),
+                httpx.AsyncClient(
+                    transport=self._transport, timeout=10, follow_redirects=False
+                ) as client,
+            ):
+                response = await client.get(
+                    "https://places.googleapis.com/v1/places/" + quote(google_place_id, safe=""),
+                    headers={"X-Goog-Api-Key": self._api_key, "X-Goog-FieldMask": "id,priceLevel"},
+                )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict) or payload.get("id") != google_place_id:
+                raise ValueError("Wrong place")
+            level = payload.get("priceLevel")
+            if level is not None and not isinstance(level, str):
+                raise ValueError("Invalid price level")
+            return GOOGLE_PRICE_LEVELS.get(level or "")
+        except (httpx.HTTPError, ValueError, TimeoutError):
+            raise MapsUnavailable("Price lookup is unavailable. Try again later.") from None
+
+    async def search_along_route(
+        self, query: str, polyline: str, *, bounds: SearchBounds
+    ) -> list[ResolvedPlace]:
+        try:
+            async with (
+                asyncio.timeout(12),
+                httpx.AsyncClient(
+                    transport=self._transport, timeout=10, follow_redirects=False
+                ) as client,
+            ):
+                response = await client.post(
+                    SEARCH_URL,
+                    headers={
+                        "X-Goog-Api-Key": self._api_key,
+                        "X-Goog-FieldMask": WAYPOINT_FIELD_MASK,
+                    },
+                    json={
+                        "textQuery": query,
+                        "pageSize": 2,
+                        "languageCode": "en",
+                        "searchAlongRouteParameters": {"polyline": {"encodedPolyline": polyline}},
+                    },
+                )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict) or not isinstance(payload.get("places", []), list):
+                raise ValueError("Invalid search")
+            places = [GooglePlace.model_validate(p) for p in payload.get("places", [])[:2]]
+            return [
+                self._resolved(p)
+                for p in places
+                if bounds.contains(p.location.latitude, p.location.longitude)
+                and category(p.types) in ("eat", "do")
+            ]
+        except (httpx.HTTPError, ValueError, TimeoutError):
+            raise MapsUnavailable("Suggested-place lookup is unavailable.") from None

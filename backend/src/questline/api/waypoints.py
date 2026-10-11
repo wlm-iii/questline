@@ -6,6 +6,7 @@ from sqlalchemy import select
 from questline.api.dependencies import AccessDep, SessionDep, SettingsDep
 from questline.models import Place, Trip, Vote
 from questline.persistence_schemas import PlaceCreate, PlaceRead, VoteCreate, VoteRead
+from questline.pricing import apply_estimate
 from questline.providers.maps import SearchBounds
 from questline.providers.selection import maps_for_settings
 from questline.schemas import Endpoint
@@ -54,6 +55,39 @@ async def add_place(
     votes = (await session.scalars(select(Vote).where(Vote.place_id == place.id))).all()
     result = PlaceRead.model_validate(place)
     for vote in votes:
+        result.vote_tallies[vote.kind] += 1
+    result.contested = result.vote_tallies["in"] > 0 and result.vote_tallies["out"] > 0
+    await session.commit()
+    return {"place": result}
+
+
+@router.post("/places/{place_id}/price-refresh")
+async def refresh_price(
+    place_id: UUID, session: SessionDep, settings: SettingsDep, access: AccessDep
+):
+    place = await session.get(Place, place_id)
+    if place is None:
+        raise HTTPException(404, "Place not found")
+    access.check_trip(place.trip_id)  # Reject cross-trip lookups before any paid request.
+    if place.category not in ("eat", "do"):
+        raise HTTPException(422, "Only food/activity waypoints have price-level estimates")
+    trip_id, google_id = place.trip_id, place.google_place_id
+    level = await maps_for_settings(settings).price_level(google_id)
+    trip = await locked_trip(session, trip_id, access)
+    await session.refresh(place)  # Preserve explicit costs written while the lookup was running.
+    updated = {
+        "category": place.category,
+        "price_level": level,
+        "est_cost_low": place.est_cost_low,
+        "est_cost_high": place.est_cost_high,
+        "cost_basis": place.cost_basis,
+    }
+    apply_estimate(updated)
+    for field in ("price_level", "est_cost_low", "est_cost_high", "cost_basis"):
+        setattr(place, field, updated[field])
+    trip.revision += 1
+    result = PlaceRead.model_validate(place)
+    for vote in (await session.scalars(select(Vote).where(Vote.place_id == place.id))).all():
         result.vote_tallies[vote.kind] += 1
     result.contested = result.vote_tallies["in"] > 0 and result.vote_tallies["out"] > 0
     await session.commit()

@@ -1,8 +1,4 @@
-"""Gemini picks main/side quests and writes grounded reasons (SPEC §8, level 0).
-
-The model sees only local waypoint IDs, names, categories, price levels, votes, and quotes. It
-returns IDs and reasons; code supplies every name, coordinate, route, time, detour, and estimate.
-"""
+"""Gemini selects membership and evidence IDs; code renders factual explanations."""
 
 import asyncio
 import json
@@ -14,10 +10,10 @@ from google import genai
 from google.genai import types
 from pydantic import Field
 
-from questline.pricing import PRESET_LABELS, PRESET_MAX_LEVEL, dollar_signs
+from questline.pricing import PRESET_LABELS, PRESET_MAX_LEVEL, PRESET_TARGETS, dollar_signs
 from questline.providers.errors import ProviderUnavailable
 from questline.schemas import Schema
-from questline.services.questline_plan import candidates, quotes, vote_score, voters
+from questline.services.questline_plan import candidates, vote_score, vote_why, voters
 
 SYSTEM_INSTRUCTION = """You help a group turn their chat into a road-trip questline.
 Choose which candidate waypoints belong on the main quest and which are optional side quests.
@@ -29,16 +25,17 @@ silently drop one unless most voters skipped it.
 Respect the budget preset: prefer waypoints within its allowed price levels for the main quest.
 Unknown prices are unknown, never cheap. Use only supplied candidate IDs. Each ID appears at most
 once. Omitted IDs stay visible to the group as candidates.
-For every chosen waypoint write a short "why" (max 200 characters) grounded only in the supplied
-votes and quotes, naming who voted or who said it. Never claim the group agreed unless every member
-voted in or sure. Never invent facts about the place: no hours, prices, parking, crowds, or "hidden
-gem". Do not mention drive times or order; code computes the route.
+For each chosen waypoint return its place_id and up to five supplied message_ids as evidence.
+Only reference messages supplied for that candidate. Do not write explanation text; code renders
+actual votes and quotes. New optional_only candidates must stay side quests or be omitted.
+Food/activity daily targets are preferences, not spending guarantees. Never call unknown prices
+cheap. Do not supply facts, hours, prices, drive times, visit durations, order, or side anchors.
 """
 
 
 class _Why(Schema):
     place_id: str
-    why: str = Field(min_length=1, max_length=400)
+    message_ids: list[str] = Field(default_factory=list, max_length=5)
 
 
 class _Picks(Schema):
@@ -68,6 +65,8 @@ class GeminiSelector:
         pool = candidates(snapshot)
         if not pool:
             return Selection([], [], {})
+        if len(pool) > 100:
+            raise ProviderUnavailable("Planning supports at most 100 candidates")
         ids = sorted(place["id"] for place in pool)
         limit = dollar_signs(PRESET_MAX_LEVEL[budget_preset])
         try:
@@ -75,6 +74,8 @@ class GeminiSelector:
                 "budget_preset": {
                     "name": PRESET_LABELS[budget_preset],
                     "allowed_price_levels": f"up to {limit}",
+                    "food_per_adult_day": PRESET_TARGETS[budget_preset][0],
+                    "activities_per_adult_day": PRESET_TARGETS[budget_preset][1],
                 },
                 "members": [member["name"] for member in snapshot["members"]],
                 "candidates": [
@@ -88,6 +89,8 @@ class GeminiSelector:
                             else "unknown"
                         ),
                         "source": place.get("source", "group"),
+                        "optional_only": place["id"] in snapshot.get("optional_only_ids", []),
+                        "est_cost": [place.get("est_cost_low"), place.get("est_cost_high")],
                         "vote_score": vote_score(place),
                         "votes": {
                             kind: people
@@ -95,9 +98,10 @@ class GeminiSelector:
                             if people
                         },
                         "quotes": [
-                            {"author": author, "text": text[:300]}
-                            for author, text in quotes(snapshot, place)[:5]
-                        ],
+                            {"message_id": message["id"], "text": message["text"][:300]}
+                            for message in snapshot["messages"]
+                            if message["id"] in (place.get("source_message_ids") or [])
+                        ][:5],
                     }
                     for place in pool
                 ],
@@ -114,9 +118,9 @@ class GeminiSelector:
                             "type": "object",
                             "properties": {
                                 "place_id": {"type": "string", "enum": ids},
-                                "why": {"type": "string"},
+                                "message_ids": {"type": "array", "items": {"type": "string"}},
                             },
-                            "required": ["place_id", "why"],
+                            "required": ["place_id", "message_ids"],
                         },
                     },
                 },
@@ -148,19 +152,28 @@ class GeminiSelector:
             side = [pid for pid in dict.fromkeys(picks.side) if pid in known and pid not in main]
             if len(main) + len(side) != len(picks.main) + len(picks.side):
                 raise ValueError("Unknown or repeated waypoint")
+            by_id = {place["id"]: place for place in pool}
+            supplied = {
+                candidate["id"]: {quote["message_id"] for quote in candidate["quotes"]}
+                for candidate in payload["candidates"]
+            }
             why = {}
             for reason in picks.reasons:
-                text = " ".join(reason.why.split())
-                if reason.place_id in known and text and _grounded(text):
-                    why[reason.place_id] = text[:300]
+                if (
+                    reason.place_id not in set(main + side)
+                    or reason.place_id in why
+                    or not set(reason.message_ids) <= supplied[reason.place_id]
+                ):
+                    raise ValueError("Ungrounded evidence reference")
+                place = by_id[reason.place_id]
+                why[reason.place_id] = vote_why(
+                    snapshot,
+                    {
+                        **place,
+                        "source_message_ids": reason.message_ids,
+                    },
+                )
             return Selection(main, side, why)
         except Exception:
             # SDK errors, malformed output, deadlines. CancelledError still propagates.
             raise ProviderUnavailable("Gemini planning failed. Build again to retry.") from None
-
-
-def _grounded(text: str) -> bool:
-    """Reject reasons that use words the honesty rules forbid."""
-    lowered = text.casefold()
-    banned = ("hidden gem", "everyone agreed", "the group agreed", "open until", "parking is")
-    return not any(phrase in lowered for phrase in banned)

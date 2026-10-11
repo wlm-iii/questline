@@ -20,6 +20,7 @@ from questline.schemas import (
     MessageRead,
     TripRead,
 )
+from questline.services.questline_plan import validate_context
 
 router = APIRouter(tags=["generations"])
 BUILD_TIMEOUT = timedelta(minutes=5)
@@ -76,11 +77,15 @@ async def create_generation(
             select(Message).where(Message.trip_id == trip_id).order_by(Message.sent_at, Message.id)
         )
     ).all()
-    if not messages:
-        raise HTTPException(422, "Import a transcript before generating a plan")
     if sum(len(m.text) for m in messages) > settings.max_transcript_chars:
         raise HTTPException(413, "Transcript exceeds the generation limit")
     snapshot = await trip_snapshot(session, trip, messages)
+    if not messages and not snapshot["places"]:
+        raise HTTPException(422, "Import chat or add a resolved waypoint before generating a plan")
+    try:
+        validate_context(snapshot)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
     previous = await session.get(Plan, trip.current_plan_id) if trip.current_plan_id else None
     generation = PlanGeneration(
         trip_id=trip_id,
@@ -90,6 +95,11 @@ async def create_generation(
             **snapshot,
             "budget_preset": body.budget_preset,
             "previous_plan": previous.content if previous else None,
+            "planning_limits": {
+                "planner_detour_limit": settings.planner_detour_limit,
+                "planner_suggestion_query_limit": settings.planner_suggestion_query_limit,
+                "planner_suggestion_limit": settings.planner_suggestion_limit,
+            },
         },
         budget_preset=body.budget_preset,
         requested_by=access.member.id if access.member else None,

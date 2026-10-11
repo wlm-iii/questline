@@ -20,7 +20,7 @@ from questline.services.plan_edits import (
     only_follow_through,
     resolution_options,
 )
-from questline.services.questline_plan import compose, decisions_from
+from questline.services.questline_plan import PlanningError, compose, decisions_from
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 
@@ -134,13 +134,21 @@ async def apply_plan_operations(
                 node.owner_member_id = UUID(owner) if owner else None
             node.notes = decisions.notes.get(node.id, node.notes)
     else:
-        content = await compose(
-            snapshot,
-            decisions,
-            budget_preset=preset,
-            router=router,
-            previous=previous,
-        )
+        # A structural edit uses current group facts; don't repeat saved, now-stale vote claims.
+        decisions.why = {}
+        try:
+            content = await compose(
+                snapshot,
+                decisions,
+                budget_preset=preset,
+                router=router,
+                previous=previous,
+                detour_limit=settings.planner_detour_limit,
+            )
+        except PlanningError as exc:
+            raise HTTPException(422, str(exc)) from None
+        except TimeoutError:
+            raise ProviderUnavailable("Plan recomputation timed out; retry the edit") from None
     plan, trip = await lock_plan(plan_id, session, access)
     if plan.revision != body.revision:
         raise HTTPException(409, "Plan changed; fetch the latest revision before editing")

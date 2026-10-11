@@ -31,6 +31,10 @@ class Leg:
     distance_m: int
     polyline: str | None = None
 
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.drive_min) or self.drive_min < 0 or self.distance_m < 0:
+            raise ValueError("Invalid route leg")
+
 
 class RoutesUnavailable(ProviderUnavailable):
     """Safe to show to clients; never includes upstream response text or credentials."""
@@ -50,12 +54,39 @@ def straight_line_m(a: LatLng, b: LatLng) -> float:
     phi1, phi2 = math.radians(a.lat), math.radians(b.lat)
     dphi, dlmb = phi2 - phi1, math.radians(b.lng - a.lng)
     h = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlmb / 2) ** 2
-    return 2 * radius * math.asin(math.sqrt(h))
+    return 2 * radius * math.asin(math.sqrt(min(1, max(0, h))))
 
 
 def estimated_leg(a: LatLng, b: LatLng) -> Leg:
     meters = straight_line_m(a, b) * ROAD_FACTOR
-    return Leg(drive_min=round(meters / 1000 / ESTIMATE_KMH * 60, 1), distance_m=round(meters))
+    return Leg(drive_min=meters / 1000 / ESTIMATE_KMH * 60, distance_m=round(meters))
+
+
+class RequestRouter:
+    """Request-local reuse of identical routes, including failures; never retry a paid call."""
+
+    def __init__(self, router: Router):
+        self._router = router
+        self.routed = router.routed
+        self._results: dict[tuple[LatLng, ...], list[Leg] | ProviderUnavailable] = {}
+
+    async def legs(self, points: list[LatLng]) -> list[Leg]:
+        key = tuple(points)
+        if key not in self._results:
+            try:
+                legs = await self._router.legs(points)
+                if len(legs) != len(points) - 1:
+                    raise RoutesUnavailable("Unexpected route leg count")
+                self._results[key] = legs
+            except asyncio.CancelledError:
+                self._results[key] = RoutesUnavailable("Routing timed out")
+                raise
+            except (ProviderUnavailable, TimeoutError):
+                self._results[key] = RoutesUnavailable("Routing is unavailable")
+        result = self._results[key]
+        if isinstance(result, ProviderUnavailable):
+            raise result
+        return result
 
 
 class EstimateRouter:
@@ -131,13 +162,13 @@ class GoogleRoutes:
                 raise ValueError("Unexpected leg count")
             return [
                 Leg(
-                    drive_min=round(_seconds(leg.get("duration", "0s")) / 60, 1),
-                    distance_m=int(leg.get("distanceMeters", 0)),
+                    drive_min=_seconds(leg["duration"]) / 60,
+                    distance_m=int(leg["distanceMeters"]),
                     polyline=(leg.get("polyline") or {}).get("encodedPolyline"),
                 )
                 for leg in raw_legs
             ]
         except RoutesUnavailable:
             raise
-        except (httpx.HTTPError, ValueError, TypeError, AttributeError, TimeoutError):
+        except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError, TimeoutError):
             raise RoutesUnavailable("Google Routes is unavailable. Try again later.") from None
