@@ -608,3 +608,57 @@ async def test_run_links_and_forwards_messages_through_imsg(api, state_path, mon
     sends = [json.loads(line) for line in log.read_text().splitlines()]
     assert any(r["method"] == "send" and r["params"]["chat_guid"] == CHAT for r in sends)
     assert saved_rowid(state_path) == 2
+
+
+async def test_build_reply_says_what_changed_and_what_is_contested(relay, api, sender):
+    linked(api)
+    api.plan = PlanSummary(
+        main_quests=2,
+        side_quests=1,
+        estimate=None,
+        estimate_is_partial=False,
+        changes=["Added Taco Bell as a side quest", "Moved Nepenthe to side quests", "Reordered"],
+        contested=["McWay Falls"],
+    )
+    await relay.handle(row(1, text="@questline build"))
+    await relay.wait_for_tasks()
+    assert replies(sender)[-1] == (
+        "Questline ready: 2 main quests + 1 side quest. Changed: added Taco Bell as a side "
+        "quest; moved Nepenthe to side quests; and 1 more. Split votes: McWay Falls — resolve "
+        "on the map. https://questline.test/t/abc123"
+    )
+
+
+async def test_build_reply_says_when_nothing_changed(relay, api, sender):
+    linked(api)
+    api.plan = PlanSummary(
+        main_quests=2,
+        estimate=None,
+        estimate_is_partial=False,
+        changes=["No changes from the previous questline"],
+    )
+    await relay.handle(row(1, text="@questline build"))
+    await relay.wait_for_tasks()
+    assert "No changes since the last build." in replies(sender)[-1]
+
+
+def test_plan_summary_reads_changes_and_split_votes():
+    content = {
+        "graph": {
+            "nodes": [
+                {"id": "start", "role": "start", "quest": "main", "title": "A"},
+                {"id": "p1", "role": "stop", "quest": "main", "title": "McWay Falls"},
+                {"id": "p2", "role": "stop", "quest": "side", "title": "Taco Bell"},
+            ]
+        },
+        "per_person_estimate": None,
+        "changed_from_previous": ["Added Taco Bell as a side quest"],
+        "conflicts": [
+            {"node_id": "p1", "kind": "split_vote", "detail": "x"},
+            {"node_id": "p2", "kind": "over_budget", "detail": "y"},
+        ],
+    }
+    summary = PlanSummary.from_content(content)
+    assert (summary.main_quests, summary.side_quests) == (1, 1)
+    assert summary.contested == ["McWay Falls"]
+    assert summary.changes == ["Added Taco Bell as a side quest"]

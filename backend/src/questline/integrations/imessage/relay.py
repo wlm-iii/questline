@@ -344,6 +344,8 @@ class Relay:
 
     def _ready_text(self, plan: PlanSummary, trip_id: str) -> str:
         quests = f"{plan.main_quests} main quest{'' if plan.main_quests == 1 else 's'}"
+        if plan.side_quests:
+            quests += f" + {plan.side_quests} side quest{'' if plan.side_quests == 1 else 's'}"
         estimate = ""
         if plan.estimate is not None:
             low, high = plan.estimate
@@ -351,7 +353,19 @@ class Relay:
             if plan.estimate_is_partial:
                 scope += "; some stops unpriced"
             estimate = f", est. ${low:.0f}–{high:.0f}/person ({scope})"
-        return f"Questline ready: {quests}{estimate}. {self._trip_url(trip_id)}"
+        notes = ""
+        if plan.changes:
+            shown = [change[:1].lower() + change[1:] for change in plan.changes[:2]]
+            more = len(plan.changes) - len(shown)
+            text = "; ".join(shown) + (f"; and {more} more" if more else "")
+            notes += (
+                " No changes since the last build."
+                if plan.changes == ["No changes from the previous questline"]
+                else f" Changed: {text}."
+            )
+        if plan.contested:
+            notes += f" Split votes: {', '.join(plan.contested)} — resolve on the map."
+        return f"Questline ready: {quests}{estimate}.{notes} {self._trip_url(trip_id)}"
 
     async def wait_for_tasks(self) -> None:
         while self._tasks:
