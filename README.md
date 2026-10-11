@@ -464,12 +464,16 @@ send `@questline I'm <their web name>` in the group. If exactly one member with 
 handle yet, the handle joins that member, and anything the handle already did (messages, votes,
 mentions, tasks) moves over; otherwise the handle's own member is renamed.
 
+**Linking a chat.** On the live trip, *Link iMessage* copies `@questline link <share link>`;
+paste it into the group and send. The relay accepts either the pasted share link (any host,
+`…/t/<trip_id>`) or the bare trip ID.
+
 `@questline build` replies with the main and side quest counts, the estimate, up to two lines on
 what changed since the last build, and any stops with split votes. `@questline add <place>` only
 accepts results near the trip; include the city if it can't find one.
 
 Manual check: `imsg chats --json` lists the test group;
-`@questline link <trip_id>` in the group posts the notice; a normal message reaches the trip
+`@questline link <share link or trip_id>` in the group posts the notice; a normal message reaches the trip
 within ~15 s; a ❤️ tapback on a message that names one place becomes an *I'm in* vote.
 
 ## Checks

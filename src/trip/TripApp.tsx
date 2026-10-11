@@ -4,6 +4,7 @@ import { PlannerHeader } from '../components/AppHeader'
 import { TripHeading } from '../components/TripHeading'
 import { AppFooter } from '../components/AppFooter'
 import { Notice } from '../components/Notice'
+import { copyText } from '../lib/copyText'
 import { PartyCard } from '../features/overview/PartyCard'
 import { tripHeadingFromSnapshot } from './tripHeadingAdapter'
 import { TripWorkspace } from './TripWorkspace'
@@ -20,17 +21,31 @@ export function TripApp() {
 
   function shareTrip() {
     const link = tripUrl(session.tripId)
-    if (!navigator.clipboard) return setNotice(`Share this link with your party: ${link}`)
-    navigator.clipboard
-      .writeText(link)
-      .then(() => setNotice('Trip link copied. Anyone with the link can see this trip and join it.'))
-      .catch(() => setNotice(`Share this link with your party: ${link}`))
+    void copyText(link).then((copied) =>
+      setNotice(
+        copied
+          ? 'Trip link copied. Anyone with the link can see this trip and join it.'
+          : `Share this link with your party: ${link}`,
+      ),
+    )
+  }
+
+  /** The relay accepts the pasted share link, so this one message links a group chat. */
+  function linkChat() {
+    const command = `@questline link ${tripUrl(session.tripId)}`
+    void copyText(command).then((copied) =>
+      setNotice(
+        copied
+          ? 'Copied. Paste it into your iMessage group and send it to link the chat to this trip.'
+          : `Send this in your iMessage group: ${command}`,
+      ),
+    )
   }
 
   return (
     <div className="app">
       <div className="workspace">
-        <PlannerHeader status={status} planSetupLabel="New trip" onPlanSetup={navigateHome} onShare={shareTrip} />
+        <PlannerHeader status={status} planSetupLabel="New trip" onPlanSetup={navigateHome} onShare={shareTrip} onLinkChat={linkChat} />
         {heading ? (
           <>
             <TripHeading

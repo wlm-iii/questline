@@ -375,7 +375,7 @@ async def test_link_without_id_replies_with_the_trip_link(relay, api, sender):
 
 async def test_commands_in_an_unlinked_chat_explain_how_to_link(relay, sender):
     await relay.handle(row(1, text="@questline build"))
-    assert "@questline link <trip ID>" in replies(sender)[0]
+    assert "Send @questline link with the trip's share link" in replies(sender)[0]
 
 
 async def test_unlink_stops_reading_the_chat(relay, api, sender, clock):
