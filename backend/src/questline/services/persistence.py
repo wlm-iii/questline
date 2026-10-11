@@ -20,6 +20,7 @@ from questline.models import (
     Trip,
     Vote,
 )
+from questline.pricing import apply_estimate
 from questline.providers.maps import ResolvedPlace
 from questline.schemas import MessageInput
 
@@ -231,6 +232,17 @@ async def upsert_place(
         )
         session.add(place)
     else:
+        if source != "suggested":
+            refreshed = {
+                "category": place.category,
+                "price_level": resolved.price_level,
+                "est_cost_low": place.est_cost_low,
+                "est_cost_high": place.est_cost_high,
+                "cost_basis": place.cost_basis,
+            }
+            apply_estimate(refreshed)
+            for field in ("price_level", "est_cost_low", "est_cost_high", "cost_basis"):
+                setattr(place, field, refreshed[field])
         place.source_message_ids = list(
             dict.fromkeys([*place.source_message_ids, *(str(mid) for mid in message_ids or [])])
         )

@@ -131,4 +131,6 @@ async def test_rebuild_keeps_owners_and_reports_changes(api):
     assert rebuilt["id"] != plan["id"]
     owner = next(n for n in rebuilt["content"]["graph"]["nodes"] if n["id"] == bakery)
     assert owner["owner_member_id"] == sam
-    assert rebuilt["content"]["changed_from_previous"] == ["No changes from the previous questline"]
+    assert rebuilt["content"]["changed_from_previous"] == [
+        "Budget preset changed from comfortable to treat"
+    ]

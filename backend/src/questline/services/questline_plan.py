@@ -6,25 +6,34 @@ minutes, estimates, and conflict labels. Nothing in this module invents a place 
 """
 
 import asyncio
+import copy
 import math
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from questline.pricing import PRESET_LABELS, PRESET_MAX_LEVEL, dollar_signs, over_budget
+from questline.pricing import (
+    PRESET_LABELS,
+    PRESET_MAX_LEVEL,
+    apply_estimate,
+    dollar_signs,
+    over_budget,
+)
 from questline.providers.errors import ProviderUnavailable
 from questline.providers.routes import (
     EstimateRouter,
     LatLng,
     Leg,
+    RequestRouter,
     Router,
     estimated_leg,
     straight_line_m,
 )
 from questline.schemas import (
     Conflict,
+    Endpoint,
     PlanContent,
     PlanDay,
     PlanEdge,
@@ -35,7 +44,17 @@ from questline.schemas import (
 DAY_START = time(9, 0)
 DAY_END = time(19, 0)
 VISIT_MIN = {"eat": 60, "do": 75, "along_the_way": 30, "stay": 30}
-PRICED_CATEGORIES = {"eat", "do", "along_the_way"}
+PRICED_CATEGORIES = {"eat", "do"}
+ROUTING_DEADLINE_SECONDS = 60
+DETOUR_DEADLINE_SECONDS = 60
+COMPOSE_DEADLINE_SECONDS = 125
+MAX_CANDIDATES = 100
+
+
+class PlanningError(ValueError):
+    """Code-owned, safe to display; never use upstream response text."""
+
+
 VOTE_WORDS = {"in": "I'm in", "ok": "Sure", "out": "Skip"}
 WHY_MAX = 300
 QUOTE_MAX = 120
@@ -130,6 +149,8 @@ def vote_why(snapshot: dict[str, Any], place: dict[str, Any]) -> str:
         parts.append(f'{author}: "{_clip(text, QUOTE_MAX)}"')
     elif place.get("source") == "added":
         parts.append("Added by search")
+    elif place.get("source") == "suggested":
+        parts.append("Suggested along the route; no group evidence claimed")
     if not any(groups.values()):
         parts.insert(0, "No votes yet")
     return _clip("; ".join(parts[:-1]) + (". " if len(parts) > 1 else "") + parts[-1], WHY_MAX)
@@ -183,9 +204,25 @@ def _trip_dates(trip: dict[str, Any]) -> list[date]:
     start = date.fromisoformat(trip["start_date"]) if trip.get("start_date") else None
     end = date.fromisoformat(trip["end_date"]) if trip.get("end_date") else None
     if start is None:
-        raise ValueError("Trip needs dates before building a questline")
-    end = end if end and end >= start else start
+        raise PlanningError("Trip needs dates before building a questline")
+    if end is None or not 0 <= (end - start).days <= 2:
+        raise PlanningError("Planning supports one to three inclusive trip days")
     return [start + timedelta(days=offset) for offset in range((end - start).days + 1)]
+
+
+def validate_context(snapshot: dict[str, Any]) -> None:
+    trip = snapshot["trip"]
+    if not trip.get("origin") or not trip.get("destination"):
+        raise PlanningError("Set resolved trip endpoints before building")
+    Endpoint.model_validate(trip["origin"])
+    Endpoint.model_validate(trip["destination"])
+    _trip_dates(trip)
+    ZoneInfo(trip["timezone"])
+    pool = snapshot["places"]
+    if len(pool) > MAX_CANDIDATES:
+        raise PlanningError("Planning supports at most 100 candidate waypoints")
+    if len({p["id"] for p in pool}) != len(pool):
+        raise PlanningError("Duplicate candidate IDs")
 
 
 def _fmt_money(low: float, high: float) -> str:
@@ -226,6 +263,32 @@ def changes(previous: dict[str, Any] | None, current: PlanContent) -> list[str]:
     kept_new = [pid for pid in new_main if pid in old_main]
     if kept_old != kept_new:
         result.append("Reordered the main quest")
+    old_nodes = {n["id"]: n for n in previous["graph"]["nodes"] if n.get("role") == "stop"}
+    new_nodes = {n.id: n for n in current.graph.nodes if n.role == "stop"}
+    for pid in sorted(old_nodes.keys() & new_nodes.keys()):
+        old, new = old_nodes[pid], new_nodes[pid]
+        if old.get("quest") == new.quest == "side" and old.get("anchor") != new.anchor:
+            result.append(f"Changed side-quest anchor for {new.title}")
+        old_cost = tuple(old["est_cost"]) if old.get("est_cost") is not None else None
+        if old_cost != new.est_cost:
+            before = _fmt_money(*old_cost) if old_cost is not None else "unknown"
+            after = _fmt_money(*new.est_cost) if new.est_cost is not None else "unknown"
+            result.append(f"Cost estimate for {new.title} changed from {before} to {after}")
+    if previous.get("estimate_is_partial", False) != current.estimate_is_partial or set(
+        previous.get("unpriced_node_ids", [])
+    ) != set(current.unpriced_node_ids):
+        result.append(
+            "Food/activity price coverage changed; "
+            + (
+                "subtotal is partial"
+                if current.estimate_is_partial
+                else "no unpriced main food/activity stops"
+            )
+        )
+    if previous.get("budget_preset") != current.budget_preset:
+        result.append(
+            f"Budget preset changed from {previous.get('budget_preset')} to {current.budget_preset}"
+        )
     old_estimate = previous.get("per_person_estimate")
     new_estimate = current.per_person_estimate
     if (tuple(old_estimate) if old_estimate else None) != new_estimate:
@@ -238,9 +301,12 @@ def changes(previous: dict[str, Any] | None, current: PlanContent) -> list[str]:
 async def _detour(router: Router, a: LatLng, s: LatLng, b: LatLng, direct: Leg) -> int | None:
     try:
         legs = await router.legs([a, s, b])
-    except ProviderUnavailable:
+    except (ProviderUnavailable, TimeoutError):
         return None
-    return max(0, round(sum(leg.drive_min for leg in legs) - direct.drive_min))
+    if len(legs) != 2:
+        return None
+    # drive_min retains raw provider seconds / 60; rounding happens only after subtraction.
+    return math.ceil(max(0, sum(leg.drive_min for leg in legs) - direct.drive_min))
 
 
 async def compose(
@@ -251,6 +317,36 @@ async def compose(
     router: Router,
     previous: dict[str, Any] | None = None,
     warnings: list[str] | None = None,
+    detour_limit: int = 5,
+) -> PlanContent:
+    """Shared build/edit derivation, bounded and without mutating frozen inputs."""
+    if not 0 <= detour_limit <= 20:
+        raise ValueError("Invalid detour limit")
+    overlay = copy.deepcopy(snapshot)
+    validate_context(overlay)
+    for place in overlay["places"]:
+        apply_estimate(place)
+    async with asyncio.timeout(COMPOSE_DEADLINE_SECONDS):
+        return await _compose(
+            overlay,
+            decisions,
+            budget_preset=budget_preset,
+            router=RequestRouter(router),
+            previous=previous,
+            warnings=warnings,
+            detour_limit=detour_limit,
+        )
+
+
+async def _compose(
+    snapshot: dict[str, Any],
+    decisions: Decisions,
+    *,
+    budget_preset: str,
+    router: Router,
+    previous: dict[str, Any] | None = None,
+    warnings: list[str] | None = None,
+    detour_limit: int = 5,
 ) -> PlanContent:
     trip = snapshot["trip"]
     if not trip.get("origin") or not trip.get("destination"):
@@ -270,8 +366,11 @@ async def compose(
     path_ids = ["start", *main, "end"]
     routed = router.routed
     try:
-        legs = await router.legs(path)
-    except ProviderUnavailable:
+        async with asyncio.timeout(ROUTING_DEADLINE_SECONDS):
+            legs = await router.legs(path)
+        if len(legs) != len(path) - 1:
+            raise ProviderUnavailable("Unexpected route leg count")
+    except (ProviderUnavailable, TimeoutError):
         legs = [estimated_leg(a, b) for a, b in zip(path, path[1:], strict=False)]
         routed = False
         notes.append("Routing was unavailable, so drive times are straight-line estimates")
@@ -289,8 +388,10 @@ async def compose(
     times: dict[str, tuple[datetime, datetime, int]] = {}
     overnight = False
     for index, pid in enumerate(main):
-        visit = VISIT_MIN.get(places[pid]["category"], 60)
-        drive = timedelta(minutes=legs[index].drive_min)
+        visit = (
+            0 if places[pid]["category"] == "stay" else VISIT_MIN.get(places[pid]["category"], 60)
+        )
+        drive = timedelta(minutes=math.ceil(legs[index].drive_min))
         arrive = cursor + drive
         depart = arrive + timedelta(minutes=visit)
         if depart > day_end and day_index + 1 < len(dates) and len(days[-1]["node_ids"]) > 0:
@@ -298,7 +399,12 @@ async def compose(
             day_index += 1
             overnight = True
             cursor, day_end = window(dates[day_index])
-            days.append({"date": dates[day_index], "start_at": cursor, "node_ids": []})
+            days.append(
+                {"date": dates[day_index], "start_at": cursor, "node_ids": [path_ids[index]]}
+            )
+            notes.append(
+                "Next day resumes at the previous endpoint; lodging transfers are not modeled"
+            )
             arrive = cursor + drive
             depart = arrive + timedelta(minutes=visit)
         if depart > day_end:
@@ -309,23 +415,48 @@ async def compose(
                     detail=f"Runs past {DAY_END:%-I:%M %p} on {days[-1]['date']:%a %b %-d}.",
                 )
             )
-        times[pid] = (arrive, depart, visit)
         days[-1]["node_ids"].append(pid)
-        cursor = depart
-    end_arrive = cursor + timedelta(minutes=legs[-1].drive_min)
+        if places[pid]["category"] == "stay":
+            if day_index + 1 >= len(dates):
+                raise PlanningError(
+                    "A main Stay needs another trip date; extend dates or make it a side quest"
+                )
+            days[-1]["end_at"] = arrive
+            day_index += 1
+            cursor, day_end = window(dates[day_index])
+            depart = cursor
+            if depart <= arrive:
+                raise PlanningError("Stay arrival must precede the next morning; change the route")
+            visit = int((depart.astimezone(UTC) - arrive.astimezone(UTC)).total_seconds() / 60)
+            days.append({"date": dates[day_index], "start_at": cursor, "node_ids": [pid]})
+            notes.append(
+                f"Stay at {places[pid]['name']} is proposed, not booked; check-in/out is unverified"
+            )
+        else:
+            cursor = depart
+        times[pid] = (arrive, depart, visit)
+    end_arrive = cursor + timedelta(minutes=math.ceil(legs[-1].drive_min))
     if end_arrive > day_end and day_index + 1 < len(dates) and days[-1]["node_ids"]:
         days[-1]["end_at"] = cursor
         day_index += 1
         overnight = True
         cursor, day_end = window(dates[day_index])
-        days.append({"date": dates[day_index], "start_at": cursor, "node_ids": []})
-        end_arrive = cursor + timedelta(minutes=legs[-1].drive_min)
+        days.append({"date": dates[day_index], "start_at": cursor, "node_ids": [path_ids[-2]]})
+        notes.append("Next day resumes at the previous endpoint; lodging transfers are not modeled")
+        end_arrive = cursor + timedelta(minutes=math.ceil(legs[-1].drive_min))
     days[-1]["node_ids"].append("end")
     days[-1]["end_at"] = end_arrive
     if end_arrive > day_end:
         notes.append(f"Arrival at {destination['label']} is after {DAY_END:%-I:%M %p}")
     if overnight:
-        notes.append("Overnight stays aren't planned; add a place to stay as a waypoint")
+        notes.append(
+            "Overnight accommodation is unplanned for rolled-over days; add a place to stay"
+        )
+    if day_index < len(dates) - 1:
+        notes.append(
+            "Route finishes before the last trip date; remaining time is unplanned. "
+            "No return leg was added"
+        )
 
     # ---- side quests hang off the leg with the smallest detour
     points = dict(zip(path_ids, path, strict=True))
@@ -344,19 +475,32 @@ async def compose(
     anchors = {
         pid: anchor if anchor in leg_after else best_anchor(pid) for pid, anchor in side.items()
     }
-    detours = await asyncio.gather(
-        *(
-            _detour(
+    detour_by_id: dict[str, int | None] = dict.fromkeys(anchors)
+    semaphore = asyncio.Semaphore(2)
+
+    async def compute_detour(pid: str, anchor: str) -> None:
+        async with semaphore:
+            detour_by_id[pid] = await _detour(
                 router if routed else EstimateRouter(),
                 points[anchor],
                 _point(places[pid]),
                 points[leg_after[anchor][0]],
                 leg_after[anchor][1],
             )
-            for pid, anchor in anchors.items()
-        )
-    )
-    detour_by_id = dict(zip(anchors, detours, strict=True))
+
+    try:
+        async with asyncio.timeout(DETOUR_DEADLINE_SECONDS):
+            await asyncio.gather(
+                *(
+                    compute_detour(pid, anchor)
+                    for pid, anchor in list(anchors.items())[:detour_limit]
+                )
+            )
+    except TimeoutError:
+        pass  # Optional detours never discard a usable main questline.
+    unknown = sum(value is None for value in detour_by_id.values())
+    if unknown:
+        notes.append(f"{unknown} side-quest detours unknown (lookup limit or unavailable route)")
 
     # ---- nodes and edges
     def stop_node(pid: str, quest: str) -> PlanNode:
@@ -364,7 +508,12 @@ async def compose(
         arrive, depart, visit = times.get(pid, (None, None, None))
         cost = (
             (place["est_cost_low"], place["est_cost_high"])
-            if place.get("est_cost_low") is not None and place.get("est_cost_high") is not None
+            if place["category"] in PRICED_CATEGORIES
+            and place.get("est_cost_low") is not None
+            and place.get("est_cost_high") is not None
+            and math.isfinite(place["est_cost_low"])
+            and math.isfinite(place["est_cost_high"])
+            and 0 <= place["est_cost_low"] <= place["est_cost_high"]
             else None
         )
         why = decisions.why.get(pid) or vote_why(snapshot, place)
@@ -372,11 +521,16 @@ async def compose(
         return PlanNode(
             id=pid,
             role="stop",
+            kind="lodging" if place["category"] == "stay" else "place",
             quest=quest,  # type: ignore[arg-type]
             anchor=anchors.get(pid),
             title=place["name"],
             notes=decisions.notes.get(pid, ""),
-            source_message_ids=place.get("source_message_ids") or [],
+            source_message_ids=[
+                mid
+                for mid in place.get("source_message_ids") or []
+                if mid in {m["id"] for m in snapshot["messages"]}
+            ],
             place_id=place["google_place_id"],
             lat=place["lat"],
             lng=place["lng"],
@@ -421,7 +575,7 @@ async def compose(
             source=path_ids[index],
             target=path_ids[index + 1],
             kind="travel",
-            drive_min=leg.drive_min,
+            drive_min=math.ceil(leg.drive_min),
             distance_m=leg.distance_m,
             polyline=leg.polyline,
         )
@@ -444,7 +598,7 @@ async def compose(
             detail = "; ".join(vote_parts(snapshot, pid))
             conflicts.append(Conflict(node_id=pid, kind="split_vote", detail=detail + "."))
         level = places[pid].get("price_level")
-        if over_budget(level, budget_preset):
+        if places[pid]["category"] in PRICED_CATEGORIES and over_budget(level, budget_preset):
             assert level is not None
             limit = dollar_signs(PRESET_MAX_LEVEL[budget_preset])
             conflicts.append(
@@ -456,8 +610,9 @@ async def compose(
                 )
             )
     priced = [pid for pid in main if places[pid]["category"] in PRICED_CATEGORIES]
-    known = [pid for pid in priced if places[pid].get("est_cost_low") is not None]
-    unpriced = [pid for pid in priced if places[pid].get("est_cost_low") is None]
+    node_costs = {node.id: node.est_cost for node in nodes}
+    known = [pid for pid in priced if node_costs[pid] is not None]
+    unpriced = [pid for pid in priced if node_costs[pid] is None]
     estimate = (
         (
             sum(places[pid]["est_cost_low"] for pid in known),
@@ -466,6 +621,12 @@ async def compose(
         if known
         else None
     )
+    if unpriced:
+        notes.append(
+            "Some main food/activity costs are unknown; subtotal is partial or unavailable"
+        )
+    if anchors:
+        notes.append("Optional side quests are excluded from main timing and cost subtotal")
     if main:
         notes.append("Opening hours are unverified for every stop")
 
@@ -483,8 +644,13 @@ async def compose(
             f"One-way route from {origin['label']} to {destination['label']}",
             f"Daily window {DAY_START:%-I:%M %p}–{DAY_END:%-I:%M %p} ({tz})",
             "Visits: 60 min meals, 75 min activities, 30 min stops along the way",
-            "Costs are app estimates per adult from Google price levels",
-            "Main quest order follows the route from start to end",
+            "Known food/activity ranges are per adult; coarse price-level ranges "
+            "are app estimates, not quotes",
+            "Subtotal excludes lodging, fuel, tolls, parking, taxes, tips, and side quests",
+            "Detours are local extra driving only, rounded up; "
+            "exclude visit time and are not additive",
+            "Overnight gaps resume at the previous endpoint; "
+            "no lodging transfers or bookings are modeled",
         ],
         open_questions=(
             [] if places else ["Add waypoints (import the chat or search) to build a questline"]

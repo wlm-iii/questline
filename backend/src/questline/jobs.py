@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from questline.config import Settings, get_settings
 from questline.db import configure_queue_connection, create_database
-from questline.providers.selection import planner_for_settings
 from questline.services.extraction import extract_places
 from questline.services.plan_generation import generate_plan
 
@@ -33,7 +32,7 @@ def create_queue(settings: Settings, sessions: async_sessionmaker[AsyncSession])
 
     @app.task(name="questline.generate_plan", queue="plans")
     async def generate_task(generation_id: str) -> None:
-        await generate_plan(UUID(generation_id), sessions, planner_for_settings(settings))
+        await generate_plan(UUID(generation_id), sessions, settings=settings)
 
     @app.task(name="questline.extract_places", queue="plans")
     async def extract_task(import_id: str) -> None:

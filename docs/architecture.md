@@ -68,7 +68,9 @@ Errors use `{error: {code, message}}`; conflict errors may also include `generat
 ### Jobs
 
 - Snapshots are captured **at request time**, not job start. They include actual persisted messages,
-  members, places, votes, preset, timezone, and trip context. Subsequent edits never mutate a snapshot.
+  members, places, votes, preset, timezone, trip context, previous plan, and lookup limits. Subsequent
+  edits never mutate a snapshot. Discovery is a separate private provider-facts overlay with no
+  later group votes/evidence, even when its local ID collides with a waypoint added after enqueue.
 - Generation rows and queued jobs commit atomically on the same psycopg connection.
 - Conversation rows are now trips. Existing rows, messages, and plans migrate without deletion.
 - Per-trip queue locks serialize work. The trip row lock ensures requests find an active build:
@@ -98,21 +100,29 @@ It uses an explicit field mask, a 10-second HTTP timeout with a 12-second total 
 no automatic retries, and sanitized 503
 errors. Missing keys fail explicitly; selecting Google never falls back to fake output. Build
 uses the top result and displays its resolved label; callers should include city/region. Category
-is a coarse mapping of place types; price and opening hours are unknown. Imports resolve mentions
+is a coarse mapping of place types; waypoint `priceLevel` maps to disclosed app estimates, not
+menu/admission quotes. Endpoint masks omit prices; opening hours remain unknown. Imports resolve mentions
 with a padded trip bounding-box bias and reject out-of-region or implausible name matches.
 Unresolved mentions remain visible; the matcher is conservative, not a guarantee of unique identity.
 Gemini extraction uses `google-genai` structured output, constrained message IDs, exact source
 substrings, a 30-second deadline, and no automatic retries. It never infers votes. The extraction
 pipeline has a 120-second overall deadline. `PLANNER_PROVIDER=gemini` selects it, requiring a key
-and explicit model. Gemini also picks main/side quests and writes reasons at build time
+and explicit model. Gemini also picks main/side membership and candidate-specific evidence IDs
 (`providers/gemini_selector.py`); code owns order, routing (`providers/routes.py`, Google Routes
 `computeRoutes` or straight-line estimates), timing, detours, estimates (`pricing.py`) and
-conflicts (`services/questline_plan.py`). Credentials remain server-side. Public real-provider deployment also needs
-Google attribution and content retention/refresh/removal across places, endpoints, and snapshots.
+conflicts (`services/questline_plan.py`). `services/suggestions.py` bounds real search-along-route
+lookups and registers local waypoint IDs through a short trip-locked transaction. No provider call
+holds a trip write lock. Price refresh/reimport updates coarse facts without replacing explicit
+estimates or rewriting plans/snapshots. Credentials remain server-side. Public real-provider deployment
+also needs Google attribution and content retention/refresh/removal across places, endpoints, snapshots,
+and route content. See [Level 1](level-one-planning.md) for lookup/deadline budgets and limitations.
 
 Plan schemas accept main/side roles, anchors, coordinates, travel/detour edges, polylines, days,
 prices, conflicts, estimates, warnings, and change summaries. Basic graph references, cost ranges,
-and timestamps are checked. Full route feasibility and derived-field recomputation are **not** done.
+and timestamps are checked. Builds and structural edits use the same bounded `compose()` recomputation;
+owners/notes remain follow-through edits. Stay ends a day; overnight resumption stays at the previous
+endpoint, without invented accommodation or transfers. Other daily-window overflows remain editable
+conflicts/warnings. Opening-hours validation and automatic feasibility repair remain Level 2.
 
 ## Persistence and relay endpoints
 
@@ -128,6 +138,8 @@ Additional implemented endpoints:
   are stable ordering markers, not claimed original timestamps. Reimporting identical text does not
   duplicate messages, evidence, or waypoints; it creates a new import job so failed extraction can retry.
 - `POST /trips/{id}/places`: resolve a fixture and upsert by local trip + provider place ID.
+- `POST /places/{id}/price-refresh`: one authenticated coarse-price lookup for a food/activity
+  waypoint; preserves explicit ranges and updates only future snapshots. Failures leave state unchanged.
 - `POST /places/{id}/votes`: explicit member choice; choosing it again removes it. Service callers
   supply `member_id`, whereas browser callers are always bound to their member token.
 - Task create/update and check-in create/delete endpoints from SPEC §10. Check-ins and tasks reference
@@ -149,9 +161,10 @@ represent. Back up any non-disposable database before changing schemas.
 
 ## Remaining Build work
 
-- Level 1–2 planning: search-along-route suggestions (`source = suggested`), opening-hours checks,
-  demote-and-retry when a day overflows, and Gemini-written resolution options (current options
-  are deterministic and vote-grounded).
+- Level 2 planning: opening-hours checks and demote-and-retry when a day overflows. Gemini-written
+  resolution options remain separate work (current options are deterministic and vote-grounded).
+  The existing disclosed routing fallback during edits does not yet implement the spec's
+  preserve-derived-values/`derived_stale` policy.
 - Historical iMessage import and optional deferred reactions; the web organizer and their
   iMessage handle still become two members.
 - Frontend deployment and deployment manifests; actual Supabase/hosting resources are not created.

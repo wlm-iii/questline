@@ -2,18 +2,20 @@
 
 from typing import Protocol
 
+from pydantic import Field
+
 from questline.schemas import Endpoint, Schema
 
 
 class ResolvedPlace(Schema):
-    google_place_id: str
-    name: str
+    google_place_id: str = Field(min_length=1, max_length=255)
+    name: str = Field(min_length=1, max_length=255)
     category: str
     address: str
-    lat: float
-    lng: float
+    lat: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    lng: float = Field(ge=-180, le=180, allow_inf_nan=False)
     google_maps_uri: str | None = None
-    price_level: int | None = None
+    price_level: int | None = Field(default=None, ge=0, le=4)
     est_cost_low: float | None = None
     est_cost_high: float | None = None
     cost_basis: str | None = None
@@ -60,9 +62,22 @@ class MapsProvider(Protocol):
     async def resolve_place(
         self, query: str, *, bounds: SearchBounds | None = None, mention_text: str | None = None
     ) -> ResolvedPlace | None: ...
+    async def price_level(self, google_place_id: str) -> int | None: ...
+    async def search_along_route(
+        self, query: str, polyline: str, *, bounds: SearchBounds
+    ) -> list[ResolvedPlace]: ...
 
 
 class FakeMaps:
+    async def price_level(self, google_place_id: str) -> int | None:
+        return 2 if google_place_id == "fake-big-sur-bakery" else None
+
+    async def search_along_route(
+        self, query: str, polyline: str, *, bounds: SearchBounds
+    ) -> list[ResolvedPlace]:
+        # No invented production suggestions; offline builds keep existing fixture waypoints.
+        return []
+
     async def resolve_endpoint(self, query: str) -> Endpoint | None:
         fixtures = {
             "san jose, ca": Endpoint(

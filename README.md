@@ -370,21 +370,44 @@ survive rebuilds.
 
 `POST /trips/{id}/plan-generations` snapshots the trip and queues a build (SPEC §8):
 
-1. **Pick.** Votes score *I'm in* +2, *Sure* +1, *Skip* −1. With no votes, every waypoint is a main
-   quest; otherwise a score of 2+ is a main quest and the rest are side quests (a Skip never silently
-   vetoes). With `PLANNER_PROVIDER=gemini`, Gemini makes the picks and writes each "why" from the
-   votes and quotes; if Gemini fails, the build falls back to vote scores and says so in a warning.
-   Reasons that break the honesty rules ("hidden gem", invented agreement) are replaced.
+1. **Discover and pick.** Real routing can discover up to four optional cafes/attractions along
+   the route through two bounded Places searches. Discoveries are persisted as waypoints, but never
+   claim later group votes/evidence or become main quests in that build. Votes score *I'm in* +2,
+   *Sure* +1, *Skip* −1. With no votes, existing waypoints are main quests; otherwise a score of 2+
+   is main and the rest are side (a Skip never silently vetoes). With `PLANNER_PROVIDER=gemini`,
+   Gemini picks membership and candidate-specific evidence IDs; code renders every "why" from
+   actual votes/quotes, not free-form model claims. AI failures fall back to vote scores with a warning.
 2. **Budget.** Main-quest picks above the preset's price level become side quests
    (Shoestring ≤ $, Comfortable ≤ $$, Treat any). The trip's endpoints are never stops.
 3. **Route and time.** Code orders the main quest along origin → destination, gets legs and
    polylines from Google Routes (straight-line estimates in fake mode or if Routes fails, with a
    warning), and schedules visits (60 min meals, 75 min activities, 30 min stops along the way) in
-   9 AM–7 PM windows, rolling into the next trip day when needed.
+   9 AM–7 PM windows, rolling into the next trip day when needed. A main Stay ends that day and
+   resumes at 9 AM the next date; it is not a booking. Unplanned overnight gaps resume at the
+   previous endpoint with a warning—lodging transfers are not modeled. A Stay on the last date is
+   rejected; other schedule overflows remain visible conflicts pending Level 2 repair.
 4. **Derive.** Side quests anchor to the leg with the smallest detour and get `detour_min`; the
    per-person estimate sums priced main-quest food and activities; conflicts flag split votes,
    over-budget picks and stops that run past the window; `changed_from_previous` compares with the
-   plan that was current when the build was requested.
+   plan that was current when the build was requested, including anchors, individual costs,
+   price coverage and preset changes.
+
+Builds support manually added waypoints without a transcript, one to three trip days, and at most
+100 candidates. `PLANNER_DETOUR_LIMIT=5` caps optional detour lookups (0–20), with concurrency two
+and a 60-second stage deadline. `PLANNER_SUGGESTION_QUERY_LIMIT=2` (0–2) and
+`PLANNER_SUGGESTION_LIMIT=4` (0–4) bound discovery; zero disables it. New builds freeze these limits
+alongside their inputs. Builds have a 180-second overall deadline; structural recomputation is
+bounded to 125 seconds. No provider retries; identical discovery/main routes reuse results, including
+failures. Offline builds never call Google or discover invented production places.
+
+Refresh coarse prices before Build with `POST /api/v1/places/{local-place-id}/price-refresh` and a
+member token. It makes one Place Details lookup, bumps trip revision, and preserves explicit cost
+ranges; an unknown result clears old app-derived prices. Failure leaves state unchanged. Existing
+plans and queued snapshots never change. Food/activity main quests alone contribute to the subtotal;
+unknowns are not $0 and sides are optional extra costs. `priceLevel` triggers Enterprise pricing
+for waypoint searches/details; endpoints omit it. Enable Places API (New) and Routes API, and set
+hard quotas—budget alerts alone do not cap spending. See [Level 1 implementation](docs/level-one-planning.md)
+for limits, billing, snapshot rules and remaining work.
 
 `POST /plans/{id}/operations {revision, operations}` applies `set_quest`, `move`, `set_anchor`,
 `drop`, `add`, `assign_owner` and `set_note`, recomputes every derived field, and returns the plan

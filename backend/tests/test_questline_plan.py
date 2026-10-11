@@ -217,9 +217,9 @@ async def test_gemini_picks_and_reasons_with_code_owned_derivations():
         "main": ["mcway", "bixby"],
         "side": ["bakery"],
         "reasons": [
-            {"place_id": "mcway", "why": "Maya voted I'm in; Sam voted Skip over parking."},
-            {"place_id": "bixby", "why": "Sam asked to stop for photos."},
-            {"place_id": "bakery", "why": "This hidden gem is open until 5."},
+            {"place_id": "mcway", "message_ids": []},
+            {"place_id": "bixby", "message_ids": [MSG]},
+            {"place_id": "bakery", "message_ids": []},
         ],
     }
     chooser, client = selector(json.dumps(picks))
@@ -230,9 +230,9 @@ async def test_gemini_picks_and_reasons_with_code_owned_derivations():
     # Code orders the main quest along the route, regardless of the model's order.
     main = [n.id for n in content.graph.nodes if n.role == "stop" and n.quest == "main"]
     assert main == ["bixby", "mcway"]
-    assert nodes["bixby"].why == "Sam asked to stop for photos."
-    # A reason that breaks the honesty rules is replaced by a vote-grounded one.
-    assert "hidden gem" not in nodes["bakery"].why and "Maya" in nodes["bakery"].why
+    assert 'Sam: "can we stop at Bixby Bridge' in nodes["bixby"].why
+    # All explanation text is code-owned; the model supplies only validated evidence IDs.
+    assert "Maya voted I'm in" in nodes["bakery"].why
     assert "nepenthe" not in nodes  # Omitted picks stay candidates.
     payload = json.loads(client.models.generate_content.call_args.kwargs["contents"])
     assert {c["id"] for c in payload["candidates"]} == {"bixby", "bakery", "nepenthe", "mcway"}
@@ -275,7 +275,7 @@ async def test_google_routes_parses_legs_and_hides_failures():
     legs = await router.legs(points)
     assert [(leg.drive_min, leg.distance_m, leg.polyline) for leg in legs] == [
         (10.0, 9000, "abc"),
-        (1.5, 1000, "def"),
+        (90.5 / 60, 1000, "def"),
     ]
     assert seen[0].headers["X-Goog-Api-Key"] == "secret"
 

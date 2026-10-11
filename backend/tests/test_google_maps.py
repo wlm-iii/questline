@@ -6,7 +6,12 @@ from pydantic import SecretStr
 
 from questline.config import Settings
 from questline.main import create_app
-from questline.providers.google_maps import FIELD_MASK, GoogleMaps, MapsUnavailable
+from questline.providers.google_maps import (
+    FIELD_MASK,
+    WAYPOINT_FIELD_MASK,
+    GoogleMaps,
+    MapsUnavailable,
+)
 from questline.providers.maps import FakeMaps
 from questline.providers.selection import maps_for_settings
 
@@ -29,7 +34,9 @@ async def test_google_places_request_and_resolved_fields():
         assert request.method == "POST"
         assert str(request.url) == "https://places.googleapis.com/v1/places:searchText"
         assert request.headers["X-Goog-Api-Key"] == "test-secret"
-        assert request.headers["X-Goog-FieldMask"] == FIELD_MASK
+        assert request.headers["X-Goog-FieldMask"] == (
+            FIELD_MASK if len(requests) == 1 else WAYPOINT_FIELD_MASK
+        )
         assert json.loads(request.content) == {
             "textQuery": "Coastal Bakery, Big Sur",
             "pageSize": 1,
