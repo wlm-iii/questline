@@ -30,9 +30,12 @@ export function TripApp() {
     )
   }
 
-  /** The relay accepts the pasted share link, so this one message links a group chat. */
+  /**
+   * Copies the link command with the bare trip ID. Messages splits a pasted text that ends in a URL
+   * into two messages, so `@questline link <share link>` would reach the relay without its link.
+   */
   function linkChat() {
-    const command = `@questline link ${tripUrl(session.tripId)}`
+    const command = `@questline link ${session.tripId}`
     void copyText(command).then((copied) =>
       setNotice(
         copied
