@@ -10,8 +10,9 @@ from questline.providers.errors import ProviderUnavailable
 from questline.providers.fake import FakePlanner
 from questline.providers.gemini_selector import GeminiSelector
 from questline.providers.planner import QuestlinePlanner
-from questline.providers.routes import EstimateRouter, GoogleRoutes, LatLng, RoutesUnavailable
+from questline.providers.routes import EstimateRouter, GoogleRoutes, LatLng, Leg, RoutesUnavailable
 from questline.schemas import GenerationCreate
+from questline.services.polyline import decode, encode
 from questline.services.questline_plan import (
     Decisions,
     compose,
@@ -292,3 +293,45 @@ async def test_google_routes_parses_legs_and_hides_failures():
     )
     assert any("Routing was unavailable" in warning for warning in content.warnings)
     assert all(edge.polyline is None for edge in content.graph.edges)
+
+
+class ElbowRouter:
+    """Routes every leg as an L: due south/north to the target's latitude, then east/west."""
+
+    routed = True
+
+    async def legs(self, points):
+        return [
+            Leg(30.0, 1000, encode([p, LatLng(q.lat, p.lng), q]))
+            for p, q in zip(points, points[1:], strict=False)
+        ]
+
+
+SPUR_PLACES = [
+    place("bakery", "Big Sur Bakery", 36.2620, -121.8090, "eat", 1, (10, 20)),
+    place("spot", "Roadside Spot", 37.0, -121.80),
+]
+
+
+async def test_detour_edges_carry_the_road_spur_from_the_turn_off():
+    content = await compose(
+        snapshot(places=SPUR_PLACES),
+        Decisions(main=["bakery"], side={"spot": None}),
+        budget_preset="comfortable",
+        router=ElbowRouter(),
+    )
+    detour = next(edge for edge in content.graph.edges if edge.id == "detour-spot")
+    assert detour.source == "start"
+    # The route to the spot leaves the main road at (37.0, -121.8863), not at San Jose.
+    spur = decode(detour.polyline or "")
+    assert [(round(p.lat, 4), round(p.lng, 4)) for p in spur] == [(37.0, -121.8863), (37.0, -121.8)]
+
+
+async def test_detour_edges_have_no_polyline_without_routed_geometry():
+    content = await compose(
+        snapshot(places=SPUR_PLACES),
+        Decisions(main=["bakery"], side={"spot": None}),
+        budget_preset="comfortable",
+        router=EstimateRouter(),
+    )
+    assert all(edge.polyline is None for edge in content.graph.edges if edge.kind == "detour")

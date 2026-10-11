@@ -40,6 +40,7 @@ from questline.schemas import (
     PlanGraph,
     PlanNode,
 )
+from questline.services.polyline import side_spur
 
 DAY_START = time(9, 0)
 DAY_END = time(19, 0)
@@ -298,15 +299,19 @@ def changes(previous: dict[str, Any] | None, current: PlanContent) -> list[str]:
     return result or ["No changes from the previous questline"]
 
 
-async def _detour(router: Router, a: LatLng, s: LatLng, b: LatLng, direct: Leg) -> int | None:
+async def _detour(
+    router: Router, a: LatLng, s: LatLng, b: LatLng, direct: Leg
+) -> tuple[int | None, str | None]:
+    """Extra minutes for A→S→B over A→B, and the routed spur to S from where it leaves A→B."""
     try:
         legs = await router.legs([a, s, b])
     except (ProviderUnavailable, TimeoutError):
-        return None
+        return None, None
     if len(legs) != 2:
-        return None
+        return None, None
     # drive_min retains raw provider seconds / 60; rounding happens only after subtraction.
-    return math.ceil(max(0, sum(leg.drive_min for leg in legs) - direct.drive_min))
+    minutes = math.ceil(max(0, sum(leg.drive_min for leg in legs) - direct.drive_min))
+    return minutes, side_spur(legs[0].polyline, direct.polyline, s, a=a, b=b)
 
 
 async def compose(
@@ -476,11 +481,12 @@ async def _compose(
         pid: anchor if anchor in leg_after else best_anchor(pid) for pid, anchor in side.items()
     }
     detour_by_id: dict[str, int | None] = dict.fromkeys(anchors)
+    spur_by_id: dict[str, str | None] = dict.fromkeys(anchors)
     semaphore = asyncio.Semaphore(2)
 
     async def compute_detour(pid: str, anchor: str) -> None:
         async with semaphore:
-            detour_by_id[pid] = await _detour(
+            detour_by_id[pid], spur_by_id[pid] = await _detour(
                 router if routed else EstimateRouter(),
                 points[anchor],
                 _point(places[pid]),
@@ -586,6 +592,7 @@ async def _compose(
             source=anchor,
             target=pid,
             kind="detour",
+            polyline=spur_by_id[pid],
             detour_min=detour_by_id[pid],
         )
         for pid, anchor in anchors.items()

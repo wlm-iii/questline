@@ -41,7 +41,9 @@ type QuestMapProps<Id extends string | number> = {
   routes?: MapRoute[]
 }
 
-const DASHED = [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: '#7a97a9', scale: 3 }, offset: '0', repeat: '14px' }]
+/** Side quests: dashed in the side-quest marker colour, so main (brown) and side (blue) read apart. */
+const SIDE_COLOR = '#4f7f9c'
+const DASHED = [{ icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: SIDE_COLOR, strokeWeight: 4, scale: 3 }, offset: '0', repeat: '12px' }]
 
 const FIT_PADDING = 80
 const SAN_FRANCISCO = { lat: 37.7749, lng: -122.4194 }
@@ -148,6 +150,9 @@ export function QuestMap<Id extends string | number>({ stops, selectedId, onSele
               strokeOpacity={0}
               icons={DASHED}
             />
+          ))}
+          {routes.filter(r => r.kind === 'detour').map(r => (
+            <Polyline key={`${r.id}-halo`} path={r.path} strokeColor="#fff4d6" strokeWeight={8} strokeOpacity={0.8} />
           ))}
           {routes.filter(r => r.kind === 'detour').map(r => (
             <Polyline key={r.id} path={r.path} strokeOpacity={0} icons={DASHED} />

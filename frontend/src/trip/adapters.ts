@@ -488,18 +488,61 @@ export function decodePolyline(encoded: string): { lat: number; lng: number }[] 
   return points
 }
 
-/** Plan legs: routed polylines when available, else straight segments. Detours are always straight. */
+type LatLng = { lat: number; lng: number }
+
+/** The point on `path` closest to `target`, in a local flat projection. */
+export function nearestOnPath(path: LatLng[], target: LatLng): LatLng {
+  const k = Math.cos((target.lat * Math.PI) / 180)
+  let best = path[0]
+  let bestD = Infinity
+  for (let i = 0; i < Math.max(1, path.length - 1); i++) {
+    const a = path[i]
+    const b = path[i + 1] ?? a
+    const dx = (b.lng - a.lng) * k
+    const dy = b.lat - a.lat
+    const len = dx * dx + dy * dy
+    const t = len === 0 ? 0 : Math.max(0, Math.min(1, (((target.lng - a.lng) * k) * dx + (target.lat - a.lat) * dy) / len))
+    const p = { lat: a.lat + t * dy, lng: a.lng + (t * dx) / k }
+    const d = ((p.lng - target.lng) * k) ** 2 + (p.lat - target.lat) ** 2
+    if (d < bestD) {
+      bestD = d
+      best = p
+    }
+  }
+  return best
+}
+
+/**
+ * Plan legs: routed polylines when available, else straight segments. A detour is the routed spur
+ * from where it leaves the main road; without one, a straight line from the nearest point on its
+ * leg, never from the leg's start (which can be the trip origin, far from the side quest).
+ */
 export function mapRoutes(plan: Plan | null): MapRoute[] {
   if (!plan?.content?.graph) return []
   const nodes = new Map(plan.content.graph.nodes.map(node => [node.id, node]))
-  return plan.content.graph.edges.flatMap(edge => {
-    if (edge.kind !== 'travel' && edge.kind !== 'detour') return []
-    const from = nodes.get(edge.source)
-    const to = nodes.get(edge.target)
-    if (from?.lat == null || from.lng == null || to?.lat == null || to.lng == null) return []
-    const straight = [{ lat: from.lat, lng: from.lng }, { lat: to.lat, lng: to.lng }]
-    const path = edge.kind === 'travel' && edge.polyline ? decodePolyline(edge.polyline) : straight
-    return [{ id: edge.id, kind: edge.kind, path }]
+  const point = (id: string): LatLng | null => {
+    const node = nodes.get(id)
+    return node?.lat == null || node.lng == null ? null : { lat: node.lat, lng: node.lng }
+  }
+  const legPath = new Map<string, LatLng[]>()
+  for (const edge of plan.content.graph.edges) {
+    if (edge.kind !== 'travel') continue
+    const from = point(edge.source)
+    const to = point(edge.target)
+    if (!from || !to) continue
+    legPath.set(edge.source, edge.polyline ? decodePolyline(edge.polyline) : [from, to])
+  }
+  return plan.content.graph.edges.flatMap((edge): MapRoute[] => {
+    if (edge.kind === 'travel') {
+      const path = legPath.get(edge.source)
+      return path ? [{ id: edge.id, kind: 'travel', path }] : []
+    }
+    if (edge.kind !== 'detour') return []
+    const to = point(edge.target)
+    if (!to) return []
+    if (edge.polyline) return [{ id: edge.id, kind: 'detour', path: decodePolyline(edge.polyline) }]
+    const leg = legPath.get(edge.source)
+    return leg ? [{ id: edge.id, kind: 'detour', path: [nearestOnPath(leg, to), to] }] : []
   })
 }
 

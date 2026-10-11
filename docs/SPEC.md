@@ -100,8 +100,9 @@ trips). Everyone else votes and taps.
   - Main-quest waypoints: numbered solid markers in travel order, connected by a **solid**
     polyline that follows the driving route (one decoded leg polyline per edge).
   - Side-quest waypoints: hollow markers connected to their anchor leg by a **dotted** line with a
-    "+N min" label. Build version: a straight dashed line from the anchor waypoint to the side
-    quest (Maps JS symbol icon with `repeat`); routed dotted detours are Harden.
+    "+N min" label. The detour edge's `polyline` is the routed spur from where the route to the
+    side quest leaves the main leg (taken from the A→S→B detour lookup, no extra calls); without
+    it, a straight dashed line from the nearest point on the anchor leg.
   - Candidate waypoints not yet in the questline: small grey markers.
   - Badges: contested (⚠), over budget, done (✓). Origin and destination use distinct markers.
   - Tapping a marker opens its waypoint card; the matching row in the side panel highlights.
@@ -887,7 +888,7 @@ this order after the acceptance checks pass.
 | 1 | One active generation per trip via a partial unique index; same-preset duplicate returns the running job, different preset returns 409 (§9, §10) | Frontend disables *Build* and the preset switcher while a generation is queued/running; backend returns the existing running job if one exists |
 | 2 | Level 2 generation: opening-hours checks, daily-window feasibility, demote-and-retry, `does_not_fit`/`hours` conflicts (§8) | Level 1 plan with `hours_status: "unknown"` and a warning |
 | 3 | Stalled-job recovery; mark interrupted jobs failed on worker restart; per-job timeouts (§8) | Timeouts on Gemini/Google calls; a stuck job is retried by building again with a new key |
-| 4 | Routed dotted detour polylines for side quests (§4) | Straight dashed line from the anchor waypoint to the side quest |
+| 4 | ~~Routed dotted detour polylines for side quests (§4)~~ Done: routed spurs from the turn-off | Straight dashed line from the nearest point on the anchor leg |
 | 5 | Server-sent events for live updates (§8) | 3-second polling with the revision short-circuit |
 | 6 | WhatsApp / iMessage export parsers (§8) | `Name: text` lines only, with a parsed preview |
 | 7 | Database-level cross-trip constraints (§9) | Backend checks that `member_id` and `place_id` belong to the trip on each write |

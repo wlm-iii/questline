@@ -70,7 +70,7 @@ export function TripMapPanel({ points, routes, selectedId, mapEnabled, hasPlaces
         <span>
           <i className="candidate" /> Candidate
         </span>
-        <span>{routes.length ? 'Solid: route · dashed: detour' : 'No driving route yet'}</span>
+        <span>{routes.length ? 'Brown: main route · blue dashes: side quests' : 'No driving route yet'}</span>
       </div>
     </section>
   )

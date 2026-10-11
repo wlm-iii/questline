@@ -105,7 +105,10 @@ Maps JavaScript API. Never put the backend's server key, `API_TOKEN`, or `DATABA
 `VITE_*` variable. The map code lives in `frontend/src/features/map/`; `QuestMap` takes plain stop data
 (`id`, `name`, `side`, `done`, `lat`, `lng`), so the rest of the UI can change without touching it.
 Stops without coordinates are counted but not plotted. A live trip's map draws the plan's routed
-legs (solid) and side-quest detours (dashed); the offline demo draws straight lines.
+main-quest legs (solid brown) and side quests (blue dashes) along the road from where they leave
+the main route. Without routed geometry (fake mode, the detour lookup limit, or a routing outage) a
+side quest gets a straight dash from the nearest point on its leg. The offline demo draws straight
+lines.
 
 ### Styling
 
