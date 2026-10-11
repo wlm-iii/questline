@@ -6,12 +6,12 @@ is introduced.
 
 ## Where to make changes
 
-- `src/App.tsx` owns shared state, `useSaved` calls, derived trip data, and actions. Route ordering,
+- `frontend/src/App.tsx` owns shared state, `useSaved` calls, derived trip data, and actions. Route ordering,
   votes, acceptance, import matching, waypoint identity, and persistence stay here.
-- `src/demo/types.ts` holds the current demo types, including `Stop`, `Trip`, `Constraints`,
+- `frontend/src/demo/types.ts` holds the current demo types, including `Stop`, `Trip`, `Constraints`,
   `PartyVotes`, and form input `WaypointInput`. These are demo contracts, not API models.
-- `src/demo/data.ts` holds sample stops and coordinate fallbacks.
-- `src/lib/useSaved.ts` contains the existing persistence hook, including storage failure handling.
+- `frontend/src/demo/data.ts` holds sample stops and coordinate fallbacks.
+- `frontend/src/lib/useSaved.ts` contains the existing persistence hook, including storage failure handling.
 - Layout components place panels. Content components render their props and report user actions.
   Components do not import `App`, a global store, API/session code, or sample data.
 

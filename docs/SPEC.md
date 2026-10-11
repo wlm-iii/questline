@@ -24,7 +24,7 @@ behavior; skipping them during the hackathon is expected, not a bug.
   waypoints), **resolve conflicts** (contested waypoints get grounded options), and **follow
   through** (an accepted questline becomes a quest log with owners, tasks, and check-offs).
 - **Team:** four people. Roles in §12.
-- **Stack:** aligned with what is on `main` today: React + TypeScript + Vite; FastAPI + SQLAlchemy +
+- **Stack:** aligned with what is on `main` today: React + TypeScript + Vite (`frontend/`); FastAPI + SQLAlchemy +
   Alembic + Procrastinate; Supabase as managed PostgreSQL only. The browser never talks to the
   database; all reads and writes go through FastAPI. Live updates use polling (Build) with
   server-sent events as Harden.
@@ -783,7 +783,7 @@ onward.
 - [ ] Supabase project (used as PostgreSQL only); connection URI in `backend/.env`; migrations run.
 - [ ] Vercel and Render accounts; deploy the FastAPI service; test the wake-up delay; decide whether
       the worker runs as a separate service or in-process (§8).
-- [ ] All four members added to the GitHub repo; everyone can run `npm run dev` and the backend
+- [ ] All four members added to the GitHub repo; everyone can run `npm run dev` from `frontend/` and the backend
       checks in the README.
 - [ ] Pick a one-to-three-day demo route, check endpoint/place resolution and API access, and write
       a realistic demo chat (`demo/trip.json`) using disposable data.
@@ -794,7 +794,7 @@ onward.
 
 ## 15. Environment variables
 
-Frontend (`.env.local` at the repo root): `VITE_API_URL`, `VITE_GOOGLE_MAPS_BROWSER_KEY`.
+Frontend (`frontend/.env.local`): `VITE_API_URL`, `VITE_GOOGLE_MAPS_BROWSER_KEY`.
 
 Backend (`backend/.env`): `DATABASE_URL`, `APP_ENV`, `API_TOKEN`, `CORS_ORIGINS`,
 `PLANNER_PROVIDER` (`fake|gemini`), `MAPS_PROVIDER` (`fake|google`), `GEMINI_API_KEY`,
