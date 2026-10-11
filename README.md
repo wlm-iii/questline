@@ -51,10 +51,14 @@ one of the workflows below. `frontend/src/Root.tsx` picks the screen from the UR
 | `/t/<tripId>` | Join by name, then the live trip, polled from the API |
 | `/demo` | The offline San Francisco demo, on local data only |
 
-Creating and joining need the backend. The live trip shows the waypoints with I'm in / Sure / Skip
-votes, the map, the questline (build, reorder, promote/demote, drop, resolve, accept) and the quest
-log (owners, tasks, check-offs), all shared through the API. Travel mode and constraints on the
-create form are saved in this browser only; the backend doesn't store them.
+Creating and joining need the backend. A live trip uses the demo's shell with three views:
+**Map** (waypoints with I'm in / Sure / Skip votes, the map, the questline — build, reorder,
+promote/demote, drop, resolve, accept — and the quest log with owners, tasks and check-offs),
+**Overview** (real stats, party and progress, plus a packing checklist), and **Planning desk** (the
+group's messages, the questline graph, a tier list whose tiers are your vote, and restrictions and
+travel panels). Votes, plans, messages and check-offs are shared through the API. Travel mode,
+restrictions, gas price, tier placement and the packing checklist are saved in this browser only;
+the backend doesn't store them.
 
 ### Talking to the API
 
