@@ -263,3 +263,38 @@ def test_relay_contract_accepts_reply_linkage():
         }
     )
     assert parsed.messages[0].reply_to_guid == "parent"
+
+
+async def test_extraction_never_turns_trip_endpoints_into_waypoints(api):
+    from questline.providers.extractor import Mention
+    from questline.providers.maps import ResolvedPlace
+    from questline.services.extraction import extract_places
+
+    class Destination:
+        async def extract(self, messages):
+            return [
+                Mention(
+                    mention_text="Big Sur", search_query="Big Sur", message_ids=[messages[0].id]
+                )
+            ]
+
+    class Maps:
+        async def resolve_place(self, query, *, bounds=None, mention_text=None):
+            # The same Google place as the trip's destination endpoint.
+            return ResolvedPlace(
+                google_place_id="fake-big-sur",
+                name="Big Sur",
+                category="along_the_way",
+                address="Big Sur, CA",
+                lat=36.2704,
+                lng=-121.8081,
+            )
+
+    client, app = api
+    tid = (await create(client))["trip"]["id"]
+    await client.post(f"/api/v1/trips/{tid}/import", json={"text": "Alice: Big Sur here we come"})
+    import_id = (await state(client, tid))["imports"][0]["id"]
+    await extract_places(UUID(import_id), app.state.sessions, extractor=Destination(), maps=Maps())
+    saved = await state(client, tid)
+    assert saved["places"] == []
+    assert saved["trip"]["unresolved_mentions"] == []

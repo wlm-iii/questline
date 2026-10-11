@@ -50,6 +50,10 @@ async def extract_places(
             if trip.origin and trip.destination
             else None
         )
+        # The trip's own start and end are endpoints on the map, never waypoints.
+        endpoint_ids = {
+            endpoint["google_place_id"] for endpoint in (trip.origin, trip.destination) if endpoint
+        }
         trip.revision += 1
         await session.commit()
     try:
@@ -87,6 +91,8 @@ async def extract_places(
                     }
                     if entry not in unresolved:
                         unresolved.append(entry)
+                    continue
+                if result.google_place_id in endpoint_ids:
                     continue
                 first = await session.get(Message, mention.message_ids[0])
                 assert first is not None
