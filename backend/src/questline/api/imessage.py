@@ -5,7 +5,7 @@ from sqlalchemy import false, select
 from sqlalchemy.exc import IntegrityError
 
 from questline.api.dependencies import AccessDep, SessionDep, SettingsDep
-from questline.api.imports import enqueue_import, require_fake_extraction
+from questline.api.imports import enqueue_import, require_extraction
 from questline.models import Import, Member, Message, Place, Trip, Vote
 from questline.persistence_schemas import ChatLink, Reactions, RelayBatch
 from questline.schemas import MemberCreate, MemberRead, MessageInput, TripRead
@@ -79,7 +79,7 @@ async def batch(
     request: Request,
 ):
     access.require_service()
-    require_fake_extraction(settings)
+    require_extraction(settings)
     trip = await locked_trip(session, trip_id, access)
     if trip.imessage_chat_guid is None:
         raise HTTPException(409, "Chat must be linked before ingestion")

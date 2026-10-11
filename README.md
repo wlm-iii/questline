@@ -17,9 +17,10 @@ The product and implementation spec is in [docs/SPEC.md](docs/SPEC.md).
 
 The scaffold implements trip creation/joining → transcript ingestion → background generation →
 editable draft → acceptance, with member-token access and revision-based trip polling.
-**Generation is deterministic mock output, not AI.** Gemini, Google Maps, chat-platform adapters,
-the interactive editor/frontend integration, and per-user authorization remain team work items.
-No paid APIs are called.
+**Generation is deterministic mock output, not AI.** Google Places (New) can resolve trip endpoints
+and manually added waypoints when explicitly enabled; fake providers remain the default and make
+no paid calls. Gemini place extraction is implemented; Gemini planning, routing, and the
+interactive editor/frontend integration remain work items.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing, [docs/SPEC.md](docs/SPEC.md) for the
 product requirements, data model, and target API contract, and [docs/architecture.md](docs/architecture.md)
@@ -161,6 +162,10 @@ uv run python -m questline.jobs worker
 
 Application and queue tables live in the private **`questline` schema**. Do **not** add it to
 Supabase's exposed API schemas or grant browser/anonymous roles access. All clients use FastAPI.
+Connections explicitly set the schema after connecting because session poolers may ignore startup
+`search_path` options. If you installed the queue with older code, check that all
+`procrastinate_*` tables and functions are in `questline`, not `public`; stop API/workers and
+relocate existing queue objects before installing a second queue. Preserve queued jobs and data.
 The service token grants access to all data. Member tokens are scoped to a single trip, but anyone
 with a trip link can join by name. Use synthetic conversations; this is not private/account-based
 identity, and retention/deletion controls are still pending.
@@ -171,6 +176,52 @@ bake `.env` files into images. Configure explicit `CORS_ORIGINS` for your fronte
 
 See [Supabase connection guidance](https://supabase.com/docs/guides/database/connecting-to-postgres).
 No remote Supabase project is created by this repository.
+
+### Google Places development
+
+Enable **Places API (New)** in a Google Cloud project with billing, set a quota/budget alert, and
+restrict a server-side API key to that API. Set `MAPS_PROVIDER=google` and `GOOGLE_MAPS_API_KEY`
+in `backend/.env`; never use a frontend `VITE_*` variable for this key. Restart the API afterward.
+
+This enables create-trip endpoint resolution and manual waypoint search. Each search sends
+one bounded Text Search request with an explicit field mask; creating a trip searches twice.
+The Build implementation uses Google's top result and shows its resolved label—include city/region
+in queries. Empty results stay unresolved; upstream failures return sanitized 503 responses.
+Prices and opening hours remain unknown. Imported mentions use trip-biased search and reject
+out-of-region or implausibly named matches. Gemini planning and routing are not implemented yet.
+
+Keep fake mode for normal development. Before publicly deploying real Places content, implement
+Google attribution and the applicable retention/refresh/removal policy for display fields,
+including copies in endpoint JSON and plan snapshots. Place IDs can be stored indefinitely;
+other content cannot simply be retained forever. See [Places policies](https://developers.google.com/maps/documentation/places/web-service/policies)
+and [Text Search](https://developers.google.com/maps/documentation/places/web-service/text-search).
+Provider tests use mocked HTTP and never consume Google quota. Live calls require explicit setup.
+
+### Gemini extraction development
+
+To extract arbitrary named places, set `PLANNER_PROVIDER=gemini`, `GEMINI_API_KEY`, and
+`GEMINI_MODEL` in the ignored `backend/.env`, using a currently supported structured-output
+model from AI Studio. `gemini-3.1-flash-lite` has passed a small live extraction test with the
+inline wire schema; older models such as `gemini-2.5-flash-lite` may reject new projects even when
+listed by model discovery. Verify inference access, not just listing. Use `MAPS_PROVIDER=google`
+plus its server-side key to resolve real places.
+Restart both API and worker. Missing configuration returns 503 before saving/enqueuing imports.
+The existing `PLANNER_PROVIDER` selector controls extraction too; **Gemini builds still return
+503** until the planner is implemented. Fake mode remains fully supported for independent work.
+
+Extraction sends imported message IDs and text to Gemini as untrusted data. Structured output
+must cite supplied IDs and quote an exact place-name substring; no model votes are accepted.
+The API uses a simple inline JSON schema; local Pydantic validation still enforces output limits,
+allowed fields, categories, and evidence checks, rather than trusting schema conformance alone.
+Google resolution uses a padded origin/destination box, rejects out-of-box and implausibly named
+matches, and retains them as unresolved mentions. This conservative matcher can miss aliases;
+manual search is the fallback. No provider call holds the trip write lock. Gemini has a 30-second
+deadline and no automatic retries; extraction/resolution together have a 120-second deadline.
+Failures preserve input and become sanitized failed import status; reimport to retry.
+
+Configure quotas/budget alerts and use consented or synthetic chat only. No live provider calls
+are part of the tests, including the real SDK transport test. See [Gemini structured outputs](https://ai.google.dev/gemini-api/docs/structured-output).
+Google attribution/content retention requirements above still block public real-data deployment.
 
 ### Native development with local Postgres instead
 

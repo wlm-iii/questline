@@ -20,6 +20,7 @@ from questline.api import (
 from questline.config import Settings, get_settings
 from questline.db import create_database
 from questline.jobs import create_queue
+from questline.providers.errors import ProviderUnavailable
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -53,6 +54,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.generate_task = generate_task
     app.state.extract_task = extract_task
     app.add_exception_handler(HTTPException, errors.http_error)
+    app.add_exception_handler(ProviderUnavailable, errors.provider_error)
     app.add_exception_handler(RequestValidationError, errors.validation_error)
     app.add_middleware(
         CORSMiddleware,

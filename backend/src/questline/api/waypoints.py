@@ -6,7 +6,7 @@ from sqlalchemy import select
 from questline.api.dependencies import AccessDep, SessionDep, SettingsDep
 from questline.models import Place, Vote
 from questline.persistence_schemas import PlaceCreate, PlaceRead, VoteCreate, VoteRead
-from questline.providers.maps import FakeMaps
+from questline.providers.selection import maps_for_settings
 from questline.services.persistence import locked_trip, set_vote
 
 router = APIRouter(tags=["waypoints"])
@@ -19,9 +19,7 @@ async def add_place(
     from questline.services.persistence import upsert_place
 
     access.check_trip(trip_id)
-    if settings.maps_provider != "fake":
-        raise HTTPException(503, "Google Maps provider is not implemented yet")
-    resolved = await FakeMaps().resolve_place(body.query)
+    resolved = await maps_for_settings(settings).resolve_place(body.query)
     if resolved is None:
         raise HTTPException(404, {"code": "place_not_found", "message": "Couldn't find that place"})
     trip = await locked_trip(session, trip_id, access)

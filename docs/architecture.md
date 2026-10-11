@@ -86,8 +86,20 @@ The fake planner intentionally returns an empty, clearly labeled draft, not inve
 These are explicitly labeled development fixtures, not Google-verified results.
 
 `PLANNER_PROVIDER=fake|gemini`, `MAPS_PROVIDER=fake|google`, and `GEMINI_MODEL` are recognized.
-Real provider adapters are not implemented: selecting them returns a clear 503 on relevant requests,
-rather than silently falling back to fake output. Gemini/Maps credentials remain server-side.
+Google Places (New) Text Search is implemented for trip endpoints and manually added waypoints.
+It uses an explicit field mask, a 10-second HTTP timeout with a 12-second total deadline,
+no automatic retries, and sanitized 503
+errors. Missing keys fail explicitly; selecting Google never falls back to fake output. Build
+uses the top result and displays its resolved label; callers should include city/region. Category
+is a coarse mapping of place types; price and opening hours are unknown. Imports resolve mentions
+with a padded trip bounding-box bias and reject out-of-region or implausible name matches.
+Unresolved mentions remain visible; the matcher is conservative, not a guarantee of unique identity.
+Gemini extraction uses `google-genai` structured output, constrained message IDs, exact source
+substrings, a 30-second deadline, and no automatic retries. It never infers votes. The extraction
+pipeline has a 120-second overall deadline. `PLANNER_PROVIDER=gemini` selects it, requiring a key
+and explicit model; selecting Gemini for builds still returns 503. Gemini planning and Routes
+adapters are not implemented. Credentials remain server-side. Public real-provider deployment also needs
+Google attribution and content retention/refresh/removal across places, endpoints, and snapshots.
 
 Plan schemas accept main/side roles, anchors, coordinates, travel/detour edges, polylines, days,
 prices, conflicts, estimates, warnings, and change summaries. Basic graph references, cost ranges,
@@ -128,7 +140,8 @@ represent. Back up any non-disposable database before changing schemas.
 
 ## Remaining Build work
 
-- Real Gemini extraction/planning and Google Maps adapters (fake extraction is wired end to end).
+- Gemini planning and Google Routes adapters (Gemini extraction, trip-biased place matching,
+  and Google endpoint/manual resolution are implemented; fake mode remains supported).
 - Planner selection contract `{main, side, why}` and code-owned routing/timing/estimate calculations.
 - `/operations` validation and recompute; grounded `/resolutions`.
 - API-driven seed script and demo chat (the smoke script tests only this foundation).
