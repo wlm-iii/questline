@@ -692,7 +692,7 @@ with "🧭 Questline:" so the group can tell them apart. A dedicated bot Apple I
 
 | Command | Relay action | Bot reply |
 | --- | --- | --- |
-| `@questline link <trip_id>` | `POST /trips/{id}/channels/imessage` | One-time notice: reading this chat for *<trip>*, messages go to Google Gemini, `@questline unlink` to stop, plus the trip link |
+| `@questline link <trip_id or share link>` | `POST /trips/{id}/channels/imessage` (a pasted `…/t/<trip_id>` link is reduced to its ID; the live trip's *Link iMessage* button copies this command) | One-time notice: reading this chat for *<trip>*, messages go to Google Gemini, `@questline unlink` to stop, plus the trip link |
 | `@questline build [shoestring\|comfortable\|treat]` | `POST /trips/{id}/plan-generations`, poll the generation | "Building…" then "Questline ready: N main quests, est. $X–Y/person (food + activities). <link>" or the sanitized failure; a 503 `provider_unavailable` gets "Plan building isn't available yet. Waypoints and votes are on the map: <link>" |
 | `@questline add <place>` | `POST /trips/{id}/places {query}` | "Added <resolved name> · <link>" or "Couldn't find that place — try adding the city." |
 | `@questline link` (no ID) | — | The trip link |

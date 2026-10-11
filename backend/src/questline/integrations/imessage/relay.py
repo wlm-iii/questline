@@ -57,7 +57,7 @@ USAGE = (
     "Questline commands: @questline build [shoestring|comfortable|treat] · "
     "@questline add <place> · @questline link · @questline I'm <name> · @questline unlink"
 )
-NOT_LINKED = "This chat isn't linked to a trip. Send @questline link <trip ID> from the share link."
+NOT_LINKED = "This chat isn't linked to a trip. Send @questline link with the trip's share link."
 UNREACHABLE = "Questline is unreachable right now — try again in a minute."
 
 
@@ -291,9 +291,7 @@ class Relay:
             )
             return
         except NotFound:
-            await self._reply(
-                chat_guid, "Couldn't find that trip — check the ID in the share link."
-            )
+            await self._reply(chat_guid, "Couldn't find that trip — check the share link.")
             return
         self.state.chats[chat_guid] = trip.id
         self._unlinked_until.pop(chat_guid, None)
