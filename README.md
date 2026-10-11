@@ -36,8 +36,17 @@ npm run dev
 ```
 
 Vite serves the frontend at <http://localhost:5173> by default. Run the backend separately using
-one of the workflows below. A typed API client lives in `src/api/`, but the UI doesn't use it yet;
-the screens still run on local demo data.
+one of the workflows below. `src/Root.tsx` picks the screen from the URL:
+
+| Route | Screen |
+| --- | --- |
+| `/` | Create a trip (or resume the last trip this browser joined) |
+| `/t/<tripId>` | Join by name, then the live trip, polled from the API |
+| `/demo` | The offline San Francisco demo, on local data only |
+
+Creating and joining need the backend. The live trip currently shows the trip details and party;
+places, the map and the quest log still exist only in the demo. Travel mode and constraints on
+the create form are saved in this browser only; the backend doesn't store them.
 
 ### Talking to the API
 
@@ -56,15 +65,18 @@ VITE_API_BASE_URL=https://api.example.com
 Browsers authenticate with the member token returned by create/join, sent as `X-Member-Token`, and
 stored per trip in local storage (`src/api/session.ts`). Never use `API_TOKEN` in the frontend.
 
-Shared trip links have the form `/t/<tripId>`. Vite's dev and preview servers already serve
-`index.html` for them; a static host needs an equivalent rewrite of `/t/*` to `index.html`.
+Shared trip links have the form `/t/<tripId>`; anyone with the link can see the trip and join it
+by name. Vite's dev and preview servers already serve `index.html` for every route; a static host
+needs equivalent rewrites of `/t/*` and `/demo` to `index.html`.
 `src/state/` holds the session hook (create, join, rejoin after a rejected token) and a trip
 provider that polls `GET /trips/{id}?revision=N` every 3 seconds while the tab is visible.
 
 ### Frontend composition
 
-`src/App.tsx` owns the demo's state, persistence, and actions. Individual panels receive typed
-props and action callbacks; the planning desk and overview compose panels through named slots.
+`src/App.tsx` owns the demo's state, persistence, and actions. `src/trip/TripApp.tsx` is the live
+trip's container: it reads `useTrip()` and passes plain props to the same panels, using adapters
+such as `src/trip/tripHeadingAdapter.ts` so panels never see API types. Individual panels receive
+typed props and action callbacks; the planning desk and overview compose panels through named slots.
 See [UI composition](docs/ui-composition.md) for the component inventory, relocation examples,
 and the styling boundaries to preserve when rearranging the page.
 
