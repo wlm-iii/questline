@@ -17,10 +17,10 @@ The product and implementation spec is in [docs/SPEC.md](docs/SPEC.md).
 
 The scaffold implements trip creation/joining → transcript ingestion → background generation →
 editable draft → acceptance, with member-token access and revision-based trip polling.
-**Generation is deterministic mock output, not AI.** Google Places (New) can resolve trip endpoints
-and manually added waypoints when explicitly enabled; fake providers remain the default and make
-no paid calls. Gemini place extraction is implemented; Gemini planning, routing, and the
-interactive editor/frontend integration remain work items.
+Building a questline picks main and side quests from votes (or with Gemini, when enabled), then
+code routes, times, prices and checks it; see [Building a questline](#building-a-questline).
+Google Places (New) and Routes resolve places and drive times when explicitly enabled; fake
+providers remain the default and make no paid calls.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before contributing, [docs/SPEC.md](docs/SPEC.md) for the
 product requirements, data model, and target API contract, and [docs/architecture.md](docs/architecture.md)
@@ -44,9 +44,10 @@ one of the workflows below. `src/Root.tsx` picks the screen from the URL:
 | `/t/<tripId>` | Join by name, then the live trip, polled from the API |
 | `/demo` | The offline San Francisco demo, on local data only |
 
-Creating and joining need the backend. The live trip currently shows the trip details and party;
-places, the map and the quest log still exist only in the demo. Travel mode and constraints on
-the create form are saved in this browser only; the backend doesn't store them.
+Creating and joining need the backend. The live trip shows the waypoints with I'm in / Sure / Skip
+votes, the map, the questline (build, reorder, promote/demote, drop, resolve, accept) and the quest
+log (owners, tasks, check-offs), all shared through the API. Travel mode and constraints on the
+create form are saved in this browser only; the backend doesn't store them.
 
 ### Talking to the API
 
@@ -96,8 +97,8 @@ VITE_GOOGLE_MAP_ID=
 Maps JavaScript API. Never put the backend's server key, `API_TOKEN`, or `DATABASE_URL` in a
 `VITE_*` variable. The map code lives in `src/features/map/`; `QuestMap` takes plain stop data
 (`id`, `name`, `side`, `done`, `lat`, `lng`), so the rest of the UI can change without touching it.
-Stops without coordinates are counted but not plotted. Lines between stops are straight, not road
-routes.
+Stops without coordinates are counted but not plotted. A live trip's map draws the plan's routed
+legs (solid) and side-quest detours (dashed); the offline demo draws straight lines.
 
 ### Styling
 
@@ -138,7 +139,8 @@ This starts PostgreSQL, applies migrations, and runs the API and worker. Open:
 In Swagger's **Authorize** dialog, enter `local-development-only` as the bearer token.
 The service token is for tooling/bots only. Create/join routes are public and return a member token;
 use `X-Member-Token` for trip-scoped browser access. Never ship `API_TOKEN` in a frontend bundle.
-Full plan replacement (`PATCH`) requires the service token; browser operations remain to be built.
+Full plan replacement (`PATCH`) requires the service token; browsers edit plans through
+`POST /plans/{id}/operations`.
 In fake Maps mode, create trips using `San Jose, CA` and `Big Sur, CA` as endpoints—these are
 explicit fixtures, not Google-verified results.
 The Compose ports bind to localhost. Do not expose this development configuration publicly.
@@ -257,8 +259,11 @@ This enables create-trip endpoint resolution and manual waypoint search. Each se
 one bounded Text Search request with an explicit field mask; creating a trip searches twice.
 The Build implementation uses Google's top result and shows its resolved label—include city/region
 in queries. Empty results stay unresolved; upstream failures return sanitized 503 responses.
-Prices and opening hours remain unknown. Imported mentions use trip-biased search and reject
-out-of-region or implausibly named matches. Gemini planning and routing are not implemented yet.
+Google's price level maps to the app's disclosed per-adult range table (`backend/src/questline/pricing.py`);
+places without one stay unpriced, and opening hours remain unknown. Imported mentions use
+trip-biased search and reject out-of-region or implausibly named matches. Mentions of the trip's own
+origin or destination are skipped. Builds also call the **Routes API** (`computeRoutes`) for the
+main-quest legs and each side-quest detour, so enable it for the same key.
 
 Keep fake mode for normal development. Before publicly deploying real Places content, implement
 Google attribution and the applicable retention/refresh/removal policy for display fields,
@@ -276,10 +281,8 @@ inline wire schema; older models such as `gemini-2.5-flash-lite` may reject new 
 listed by model discovery. Verify inference access, not just listing. Use `MAPS_PROVIDER=google`
 plus its server-side key to resolve real places.
 Restart both API and worker. Missing configuration returns 503 before saving/enqueuing imports.
-The existing `PLANNER_PROVIDER` selector controls extraction too; **Gemini builds still return
-503** until the planner is implemented; the seed script skips the build with a warning, and the
-iMessage relay replies that plan building isn't available yet. Fake mode remains fully supported for
-independent work.
+The existing `PLANNER_PROVIDER` selector controls extraction and builds. Fake mode remains fully
+supported for independent work.
 
 Extraction sends imported message IDs and text to Gemini as untrusted data. Structured output
 must cite supplied IDs and quote an exact place-name substring; no model votes are accepted.
@@ -342,8 +345,9 @@ BASE_URL=https://api.example.com API_TOKEN=... uv run python scripts/seed_demo.p
 `--web` (or `WEB_BASE_URL`) sets the host used in the printed link. To try a different chat, copy
 `demo/trip.json` and edit it: `members` join the trip, `chat` uses `Name: text` lines, `votes`
 match a waypoint by name (`in`, `ok` or `out`), and `build` is optional. On the fake providers
-only McWay Falls and Big Sur Bakery resolve. If the planner isn't ready (Gemini mode for now), the
-script skips the build with a warning and still prints the member tokens and trip link.
+only McWay Falls and Big Sur Bakery resolve. If the planner is unavailable (for example, a missing
+Gemini key), the script skips the build with a warning and still prints the member tokens and trip
+link.
 
 The same endpoints are available interactively at `/docs`; schemas use **snake_case** JSON fields.
 Each new generation request requires an `Idempotency-Key` header; reuse it only to retry that request.
@@ -356,13 +360,39 @@ Existing databases need `uv run alembic upgrade head`: the alignment migration r
 can retain missing endpoints/dates; new creation requests require the spec fields. Drain old queued
 jobs before upgrading because their task payload now expects the new snapshot schema.
 
-`PLANNER_PROVIDER=gemini` and `MAPS_PROVIDER=google` are recognized but return 503 for the relevant
-requests until real adapters land. Fake planning currently returns an explicitly empty draft;
-places, votes, imports, tasks, and check-ins are now persisted and returned by trip polling.
+Places, votes, imports, tasks, and check-ins are persisted and returned by trip polling.
 Fake extraction recognizes `McWay Falls` / `Big Sur Bakery`; `Mystery Cafe` exercises unresolved
 mentions. Import `Name: text` lines via `/trips/{id}/import`, or add either fixture via
-`/trips/{id}/places`. Explicit votes and waypoint-keyed quest-log data survive rebuilds.
-Real extraction, routed planning, operations/recompute, and frontend API wiring remain work items.
+`/trips/{id}/places`. Explicit votes, quest owners, notes and waypoint-keyed quest-log data
+survive rebuilds.
+
+## Building a questline
+
+`POST /trips/{id}/plan-generations` snapshots the trip and queues a build (SPEC §8):
+
+1. **Pick.** Votes score *I'm in* +2, *Sure* +1, *Skip* −1. With no votes, every waypoint is a main
+   quest; otherwise a score of 2+ is a main quest and the rest are side quests (a Skip never silently
+   vetoes). With `PLANNER_PROVIDER=gemini`, Gemini makes the picks and writes each "why" from the
+   votes and quotes; if Gemini fails, the build falls back to vote scores and says so in a warning.
+   Reasons that break the honesty rules ("hidden gem", invented agreement) are replaced.
+2. **Budget.** Main-quest picks above the preset's price level become side quests
+   (Shoestring ≤ $, Comfortable ≤ $$, Treat any). The trip's endpoints are never stops.
+3. **Route and time.** Code orders the main quest along origin → destination, gets legs and
+   polylines from Google Routes (straight-line estimates in fake mode or if Routes fails, with a
+   warning), and schedules visits (60 min meals, 75 min activities, 30 min stops along the way) in
+   9 AM–7 PM windows, rolling into the next trip day when needed.
+4. **Derive.** Side quests anchor to the leg with the smallest detour and get `detour_min`; the
+   per-person estimate sums priced main-quest food and activities; conflicts flag split votes,
+   over-budget picks and stops that run past the window; `changed_from_previous` compares with the
+   plan that was current when the build was requested.
+
+`POST /plans/{id}/operations {revision, operations}` applies `set_quest`, `move`, `set_anchor`,
+`drop`, `add`, `assign_owner` and `set_note`, recomputes every derived field, and returns the plan
+(409 on a stale revision, 422 on an invalid edit). Structural edits return an accepted plan to
+draft; owner and note edits keep it accepted. `POST /plans/{id}/resolutions {node_id}` returns up
+to three options for a stop (promote or demote, swap for a nearby unskipped place of the same
+kind, drop), each grounded in the actual votes and validated against the plan; apply one with
+`/operations`. Resolution options are deterministic, not AI.
 
 ## iMessage relay
 
