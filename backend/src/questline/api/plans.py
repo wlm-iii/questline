@@ -124,8 +124,8 @@ async def apply_plan_operations(
         router = EstimateRouter() if follow_through else router_for_settings(settings)
     except ProviderUnavailable:
         router = EstimateRouter()
-    # Recompute without holding the trip lock; routing calls can take seconds.
-    await session.rollback()
+    # Recompute before taking the trip lock; routing calls can take seconds. The reads above
+    # take no row locks, and the revision is checked again under the lock below.
     if follow_through:
         content = PlanContent.model_validate(previous)
         for node in content.graph.nodes:

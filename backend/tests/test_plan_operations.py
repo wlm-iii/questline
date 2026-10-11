@@ -74,6 +74,20 @@ async def test_build_edit_resolve_accept_and_assign(api):
     )
     assert invalid.status_code == 422
 
+    # Browsers edit with their member token, not the service token.
+    member = (
+        await client.post(f"/api/v1/trips/{plan['trip_id']}/members", json={"name": "Jo"})
+    ).json()
+    as_member = await client.post(
+        f"{url}/operations",
+        headers={"Authorization": "", "X-Member-Token": member["member_token"]},
+        json={
+            "revision": edited_plan["revision"],
+            "operations": [{"op": "set_note", "node_id": bakery, "notes": "Cash only?"}],
+        },
+    )
+    assert as_member.status_code == 200, as_member.text
+    edited_plan = as_member.json()["plan"]
     accepted = (
         await client.post(f"{url}/accept", json={"revision": edited_plan["revision"]})
     ).json()["plan"]

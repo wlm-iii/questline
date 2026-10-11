@@ -49,7 +49,19 @@ def category(types: list[str]) -> str:
         return "stay"
     if set(types) & {"restaurant", "food", "cafe", "bakery", "bar", "meal_takeaway"}:
         return "eat"
-    if set(types) & {"tourist_attraction", "park", "museum", "amusement_park", "hiking_area"}:
+    if set(types) & {
+        "tourist_attraction",
+        "park",
+        "museum",
+        "amusement_park",
+        "hiking_area",
+        "beach",
+        "natural_feature",
+        "national_park",
+        "state_park",
+        "historical_landmark",
+        "observation_deck",
+    }:
         return "do"
     return "along_the_way"
 
