@@ -207,7 +207,9 @@ listed by model discovery. Verify inference access, not just listing. Use `MAPS_
 plus its server-side key to resolve real places.
 Restart both API and worker. Missing configuration returns 503 before saving/enqueuing imports.
 The existing `PLANNER_PROVIDER` selector controls extraction too; **Gemini builds still return
-503** until the planner is implemented. Fake mode remains fully supported for independent work.
+503** until the planner is implemented; the seed script skips the build with a warning, and the
+iMessage relay replies that plan building isn't available yet. Fake mode remains fully supported for
+independent work.
 
 Extraction sends imported message IDs and text to Gemini as untrusted data. Structured output
 must cite supplied IDs and quote an exact place-name substring; no model votes are accepted.
@@ -270,7 +272,8 @@ BASE_URL=https://api.example.com API_TOKEN=... uv run python scripts/seed_demo.p
 `--web` (or `WEB_BASE_URL`) sets the host used in the printed link. To try a different chat, copy
 `demo/trip.json` and edit it: `members` join the trip, `chat` uses `Name: text` lines, `votes`
 match a waypoint by name (`in`, `ok` or `out`), and `build` is optional. On the fake providers
-only McWay Falls and Big Sur Bakery resolve.
+only McWay Falls and Big Sur Bakery resolve. If the planner isn't ready (Gemini mode for now), the
+script skips the build with a warning and still prints the member tokens and trip link.
 
 The same endpoints are available interactively at `/docs`; schemas use **snake_case** JSON fields.
 Each new generation request requires an `Idempotency-Key` header; reuse it only to retry that request.

@@ -27,7 +27,9 @@ POLL_SECONDS = 1.0
 
 
 class SeedError(Exception):
-    pass
+    def __init__(self, message: str, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class _Spec(BaseModel):
@@ -92,7 +94,8 @@ class Api:
             raise SeedError(f"can't reach the API at {self._client.base_url}: {exc}") from exc
         if response.is_error:
             status = response.status_code
-            raise SeedError(f"{method} {path} failed ({status}): {_message(response)}")
+            code, message = _error_details(response)
+            raise SeedError(f"{method} {path} failed ({status}): {message}", code)
         return response
 
     def get(self, path: str) -> dict[str, Any]:
@@ -102,15 +105,16 @@ class Api:
         return self.request("POST", path, json=body, **kwargs).json()
 
 
-def _message(response: httpx.Response) -> str:
+def _error_details(response: httpx.Response) -> tuple[str | None, str]:
     try:
         payload = response.json()
     except ValueError:
-        return response.reason_phrase
+        return None, response.reason_phrase
     error = payload.get("error") if isinstance(payload, dict) else None
     if isinstance(error, dict):
-        return str(error.get("message") or error.get("code"))
-    return str(payload)
+        code = error.get("code")
+        return code, str(error.get("message") or code)
+    return None, str(payload)
 
 
 def make_client(
@@ -259,11 +263,19 @@ def _build(
     sleep: Callable[[float], None],
     timeout: float,
 ) -> None:
-    generation = api.post(
-        f"{base}/plan-generations",
-        build.model_dump(),
-        headers={"Idempotency-Key": str(uuid4())},
-    )["generation"]
+    try:
+        generation = api.post(
+            f"{base}/plan-generations",
+            build.model_dump(),
+            headers={"Idempotency-Key": str(uuid4())},
+        )["generation"]
+    except SeedError as exc:
+        # Gemini mode returns 503 provider_unavailable until plan building ships; the trip is
+        # still worth handing out, so keep going to the tokens and link.
+        if exc.code != "provider_unavailable":
+            raise
+        out(f"Skipped the build: the planner is not ready ({exc})")
+        return
     out(f"Building plan ({build.budget_preset})...")
     for _ in range(_attempts(timeout)):
         generation = api.get(f"/api/v1/plan-generations/{generation['id']}")["generation"]

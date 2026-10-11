@@ -41,12 +41,20 @@ def _error(status: int, message: str) -> httpx.Response:
 class FakeApi:
     """In-memory stand-in for the slice of SPEC §10 the seed script drives."""
 
-    def __init__(self, *, import_polls: int = 1, build_polls: int = 1, build_fails: bool = False):
+    def __init__(
+        self,
+        *,
+        import_polls: int = 1,
+        build_polls: int = 1,
+        build_fails: bool = False,
+        planner_ready: bool = True,
+    ):
         self.requests: list[tuple[str, str, dict | None]] = []
         self.trips: dict[str, dict] = {}
         self.import_polls = import_polls
         self.build_polls = build_polls
         self.build_fails = build_fails
+        self.planner_ready = planner_ready
         self.generations: dict[str, dict] = {}
         self._ids = count(1)
 
@@ -126,6 +134,10 @@ class FakeApi:
             return httpx.Response(200, json={"vote": vote})
         if match := re.fullmatch(r"POST /trips/([\w-]+)/plan-generations", route):
             assert request.headers["idempotency-key"]
+            if not self.planner_ready:
+                # What Gemini mode returns until plan building ships.
+                error = {"code": "provider_unavailable", "message": "Gemini provider is not ready"}
+                return httpx.Response(503, json={"error": error})
             generation = {"id": self._id(), "status": "queued", "plan_id": None, "error": None}
             self.generations[generation["id"]] = {**generation, "polls": self.build_polls}
             return httpx.Response(202, json={"generation": generation})
@@ -283,6 +295,14 @@ def test_failed_build_raises_with_the_server_error():
     api = FakeApi(build_fails=True)
     with pytest.raises(seed_demo.SeedError, match="Planner exploded"):
         run(api, {"trip": TRIP, "build": {}})
+
+
+def test_build_without_a_ready_planner_warns_and_still_prints_the_link():
+    api = FakeApi(planner_ready=False)
+    trip_id, lines = run(api, {"trip": TRIP, "members": ["Sam"], "build": {}})
+    assert any("Skipped the build" in line and "not ready" in line for line in lines)
+    assert any(line.startswith("  Sam: ") for line in lines)
+    assert lines[-1] == f"Trip link: http://web.test/t/{trip_id}"
 
 
 def test_api_errors_raise_with_the_error_message():
