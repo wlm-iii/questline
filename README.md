@@ -38,6 +38,25 @@ Vite serves the frontend at <http://localhost:5173> by default. Run the backend 
 one of the workflows below; the frontend scaffold is not yet wired to its API. Backend CORS
 allows the default Vite origin during development.
 
+### Google map (optional)
+
+The map view uses the Maps JavaScript API when a browser key is configured, and falls back to the
+illustrated demo map when it isn't, so the frontend runs without a key. Create `.env.local` at the
+repository root (gitignored) and restart `npm run dev`:
+
+```sh
+VITE_GOOGLE_MAPS_BROWSER_KEY=your-browser-key
+# Optional: a cloud-styled map ID; defaults to Google's DEMO_MAP_ID
+VITE_GOOGLE_MAP_ID=
+```
+
+`VITE_*` values are bundled into the browser, so use a key restricted by HTTP referrer to the
+Maps JavaScript API. Never put the backend's server key, `API_TOKEN`, or `DATABASE_URL` in a
+`VITE_*` variable. The map code lives in `src/features/map/`; `QuestMap` takes plain stop data
+(`id`, `name`, `side`, `done`, `lat`, `lng`), so the rest of the UI can change without touching it.
+Stops without coordinates are counted but not plotted. Lines between stops are straight, not road
+routes.
+
 Frontend checks and production preview:
 
 ```sh
