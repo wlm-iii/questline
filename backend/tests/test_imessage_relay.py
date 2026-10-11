@@ -382,7 +382,10 @@ async def test_unlink_stops_reading_the_chat(relay, api, sender, clock):
     linked(api)
     await relay.handle(row(1, text="@questline unlink"))
     assert ("unlink_chat", TRIP_ID) in api.calls
-    assert replies(sender) == ["Stopped reading this chat."]
+    assert replies(sender) == [
+        "Stopped reading this chat. The trip is still on the map: "
+        f"https://questline.test/t/{TRIP_ID}"
+    ]
     await relay.handle(row(2))
     clock.now += 15
     await relay.flush()

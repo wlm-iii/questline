@@ -258,7 +258,11 @@ class Relay:
                 await self.api.unlink_chat(trip_id)
                 self.state.chats.pop(chat_guid, None)
                 self._save()
-                await self._reply(chat_guid, "Stopped reading this chat.")
+                await self._reply(
+                    chat_guid,
+                    "Stopped reading this chat. The trip is still on the map: "
+                    f"{self._trip_url(trip_id)}",
+                )
             case Build(preset=preset):
                 task = asyncio.create_task(self._build(chat_guid, trip_id, preset, message.guid))
                 self._tasks.add(task)
