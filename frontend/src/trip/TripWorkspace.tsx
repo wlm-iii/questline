@@ -6,7 +6,6 @@ import { Notice } from '../components/Notice'
 import { googleMapsEnabled } from '../features/map/config'
 import { ANYONE, draftEstimate, moveInDraft, toggleDraftSide, workspaceView, type Preset, type StopView, type TaskView } from './adapters'
 import { BUILD_UNAVAILABLE, PLAN_CHANGED, errorCode, errorMessage, isConflict, isRetryable } from './errors'
-import { ImportChat } from './ImportChat'
 import { useAddPlace } from './useAddPlace'
 import { useDeviceOrder } from './useDeviceOrder'
 import { PlaceDetails } from './ui/PlaceDetails'
@@ -19,16 +18,25 @@ import { WaypointsPanel } from './ui/WaypointsPanel'
 
 type BuildAttempt = { preset: Preset; key: string }
 
+export type TripWorkspaceProps = {
+  /** Controlled board tab; uncontrolled when absent. */
+  tab?: BoardTab
+  onTabChange?: (tab: BoardTab) => void
+  /** Opens the trip's single Import chat dialog, owned by TripApp. */
+  onImport: () => void
+}
+
 /** The live map and quest board for the trip in the surrounding TripProvider. */
-export function TripWorkspace() {
+export function TripWorkspace({ tab: controlledTab, onTabChange, onImport }: TripWorkspaceProps) {
   const { session, snapshot, error, mutate } = useTrip()
   const tripId = session.tripId
   const [device, setDevice] = useDeviceOrder(tripId)
   const places = useAddPlace()
   const [selectedId, setSelectedId] = useState<Uuid | null>(null)
-  const [tab, setTab] = useState<BoardTab>('Waypoints')
+  const [ownTab, setOwnTab] = useState<BoardTab>('Waypoints')
+  const tab = controlledTab ?? ownTab
+  const setTab = onTabChange ?? setOwnTab
   const [detailsOpen, setDetailsOpen] = useState(false)
-  const [importOpen, setImportOpen] = useState(false)
   const [notice, setNotice] = useState('')
   const [preset, setPreset] = useState<Preset | null>(null)
   const [attempt, setAttempt] = useState<BuildAttempt | null>(null)
@@ -191,7 +199,7 @@ export function TripWorkspace() {
           mapEnabled={googleMapsEnabled}
           hasPlaces={view.stops.length > 0}
           onSelect={select}
-          onImport={() => setImportOpen(true)}
+          onImport={onImport}
         >
           {selected && (
             <TripPlaceCard stop={selected} voting={voting.includes(selected.id)} onVote={vote} onView={() => setDetailsOpen(true)} />
@@ -209,7 +217,7 @@ export function TripWorkspace() {
               addError={places.error}
               onAddPlace={addPlace}
               onSelect={select}
-              onImport={() => setImportOpen(true)}
+              onImport={onImport}
               voting={voting}
               onVote={vote}
             />
@@ -264,7 +272,6 @@ export function TripWorkspace() {
       <DialogHost open={detailsOpen && selected !== null} onClose={() => setDetailsOpen(false)}>
         {selected && <PlaceDetails stop={selected} owner={ownerOf(selected)} />}
       </DialogHost>
-      <ImportChat open={importOpen} onClose={() => setImportOpen(false)} />
     </>
   )
 }

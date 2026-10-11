@@ -56,7 +56,7 @@ export function TripApp() {
               dateLabel={heading.dateLabel}
               members={heading.members}
             />
-            <TripWorkspace />
+            <TripWorkspace onImport={() => {}} />
             <section className="overview">
               <div className="overview-grid">
                 <PartyCard
