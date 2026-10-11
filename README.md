@@ -39,6 +39,13 @@ Vite serves the frontend at <http://localhost:5173> by default. Run the backend 
 one of the workflows below; the frontend scaffold is not yet wired to its API. Backend CORS
 allows the default Vite origin during development.
 
+### Frontend composition
+
+`src/App.tsx` owns the demo's state, persistence, and actions. Individual panels receive typed
+props and action callbacks; the planning desk and overview compose panels through named slots.
+See [UI composition](docs/ui-composition.md) for the component inventory, relocation examples,
+and the styling boundaries to preserve when rearranging the page.
+
 ### Google map (optional)
 
 The map view uses the Maps JavaScript API when a browser key is configured, and falls back to the
