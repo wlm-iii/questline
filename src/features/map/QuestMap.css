@@ -2,3 +2,9 @@
 .google-map>div:first-child{width:100%;height:100%}
 .marker.geo{position:relative;display:block;transform:none;cursor:pointer}
 .unplotted-note{position:absolute;top:64px;left:20px;z-index:2}
+.marker.geo.endpoint>span{border-radius:7px;background:#245b3c;border-color:#f2e6ce;color:#fff;font-size:14px}
+.marker.geo.candidate>span{width:16px;height:16px;background:#a39e8d;border:2px solid #f4efe0;color:#fff;font-size:8px}
+.marker.geo.candidate.selected>span{background:#7d7867}
+.marker.geo.candidate b{left:22px;top:0}
+.map-legend i.endpoint{border-radius:2px;background:#245b3c}
+.map-legend i.candidate{background:#a39e8d}
