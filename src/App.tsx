@@ -1,132 +1,559 @@
-import { useEffect, useRef, useState } from 'react'
-import { QuestCard } from './components/QuestCard'
-import { PlannerHeader, SetupHeader } from './components/AppHeader'
-import { QuestBadge } from './components/QuestBadge'
-import { TripEssentials } from './components/TripEssentials'
+import { useCallback, useState } from 'react'
+import { PlanningDesk } from './features/planning/PlanningDesk'
+import { ConversationReader } from './features/planning/ConversationReader'
+import { RouteGraph } from './features/planning/RouteGraph'
+import { ConstraintsCard } from './features/planning/ConstraintsCard'
+import { TravelCosts } from './features/planning/TravelCosts'
+import { LocationCard } from './features/planning/LocationCard'
+import { Overview } from './features/overview/Overview'
+import { OverviewHero } from './features/overview/OverviewHero'
+import { TripStats } from './features/overview/TripStats'
+import { PartyCard } from './features/overview/PartyCard'
+import { PreparationCard } from './features/overview/PreparationCard'
+import { SetupPage } from './features/trip-setup/SetupPage'
+import { TripSetupFields } from './features/trip-setup/TripSetupFields'
+import { StartingPlaces } from './features/trip-setup/StartingPlaces'
+import { NavigationRail } from './components/NavigationRail'
+import { TripHeading } from './components/TripHeading'
+import { ViewNavigation } from './components/ViewNavigation'
+import { AppFooter } from './components/AppFooter'
+import { Notice } from './components/Notice'
+import { DialogHost } from './components/dialogs/DialogHost'
+import { ImportChatDialog } from './components/dialogs/ImportChatDialog'
+import { TripSettingsDialog } from './components/dialogs/TripSettingsDialog'
+import { WaypointDialog } from './components/dialogs/WaypointDialog'
+import { PlaceDetailsDialog } from './components/dialogs/PlaceDetailsDialog'
+import { RemoveWaypointDialog } from './components/dialogs/RemoveWaypointDialog'
+import type { Stop, Trip, WaypointInput } from './demo/types'
+import { initialStops, sampleCoords } from './demo/data'
+import { useSaved } from './lib/useSaved'
+import { PlaceCard } from './features/map/PlaceCard'
+import { EmptyMap } from './features/map/EmptyMap'
+import { PlannerHeader } from './components/AppHeader'
+import { QuestBoard } from './features/quest-board/QuestBoard'
 import { TierList } from './components/TierList'
 import { tiers, type Tier } from './components/tiers'
-import { QuestMap } from './features/map/QuestMap'
+import { MapPanel } from './features/map/MapPanel'
 import { googleMapsEnabled } from './features/map/config'
 
-type Stop = { id: number; name: string; category: string; description: string; price: number; x: number; y: number; side: boolean; votes: number; time: string; lat?: number; lng?: number }
-const initialStops: Stop[] = [
-  { id: 1, name: 'Tartine Bakery', category: 'Eat', description: 'Coffee, pastries, and a very good start.', price: 18, x: 38, y: 70, side: false, votes: 4, time: '9:00 AM', lat: 37.7614, lng: -122.4241 },
-  { id: 2, name: 'Mission Dolores Park', category: 'Do', description: 'A little sunshine. A big city view.', price: 0, x: 32, y: 82, side: false, votes: 4, time: '10:00 AM', lat: 37.7596, lng: -122.4269 },
-  { id: 3, name: 'Painted Ladies', category: 'Do', description: 'The postcard stop, with a picnic on the lawn.', price: 0, x: 45, y: 45, side: false, votes: 3, time: '11:30 AM', lat: 37.7763, lng: -122.4328 },
-  { id: 4, name: 'Japan Center', category: 'Eat', description: 'Ramen, little shops, and something sweet.', price: 25, x: 58, y: 30, side: false, votes: 4, time: '1:00 PM', lat: 37.7853, lng: -122.4296 },
-  { id: 5, name: 'Sutro Baths', category: 'Do', description: 'Take the scenic detour out to the ocean.', price: 0, x: 15, y: 23, side: true, votes: 2, time: '+45 min', lat: 37.7804, lng: -122.5137 },
-]
-const sampleCoords = Object.fromEntries(initialStops.map(s => [s.id, { lat: s.lat, lng: s.lng }]))
-type Trip = { name: string; date: string; destination: string; budget: number }
-function useSaved<T,>(key: string, fallback: T) {
-  const [value, setValue] = useState<T>(() => {
-    try { const saved = localStorage.getItem(key); return saved ? JSON.parse(saved) as T : fallback } catch { return fallback }
-  })
-  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* Storage may be unavailable in private sessions. */ } }, [key, value])
-  return [value, setValue] as const
-}
 function App() {
   const [stops, setStops] = useSaved<Stop[]>('questline-stops', initialStops)
   const [selected, setSelected] = useState(1)
   const [tab, setTab] = useState('Waypoints')
   const [filter, setFilter] = useState('All')
-  const [partyVotes, setPartyVotes] = useSaved<Record<number, Record<string, string>>>('questline-party-votes', {})
+  const [partyVotes, setPartyVotes] = useSaved<
+    Record<number, Record<string, string>>
+  >('questline-party-votes', {})
   const [voter, setVoter] = useSaved('questline-voter', 'Jerry')
-  const votes = Object.fromEntries(Object.entries(partyVotes).map(([id, members]) => [id, members[voter] ?? '']))
+  const votes = Object.fromEntries(
+    Object.entries(partyVotes).map(([id, members]) => [
+      id,
+      members[voter] ?? '',
+    ]),
+  )
   const [done, setDone] = useSaved<number[]>('questline-done', [])
   const [accepted, setAccepted] = useSaved('questline-accepted', false)
   const [modal, setModal] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [notice, setNotice] = useState('')
   const [zoom, setZoom] = useState(1)
-  const [trip, setTrip] = useSaved<Trip>('questline-trip', { name: 'A day in San Francisco', date: '2026-10-17', destination: 'San Francisco, CA', budget: 65 })
-  const [notes, setNotes] = useSaved<Record<number, string>>('questline-notes', {})
-  const [owners, setOwners] = useSaved<Record<number, string>>('questline-owners', {})
-  const [constraints, setConstraints] = useSaved('questline-constraints', { returnBy: '18:00', maxWalk: 30, dietary: 'Vegetarian options', mobility: 'Avoid steep hikes' })
+  const [trip, setTrip] = useSaved<Trip>('questline-trip', {
+    name: 'A day in San Francisco',
+    date: '2026-10-17',
+    destination: 'San Francisco, CA',
+    budget: 65,
+  })
+  const [notes, setNotes] = useSaved<Record<number, string>>(
+    'questline-notes',
+    {},
+  )
+  const [owners, setOwners] = useSaved<Record<number, string>>(
+    'questline-owners',
+    {},
+  )
+  const [constraints, setConstraints] = useSaved('questline-constraints', {
+    returnBy: '18:00',
+    maxWalk: 30,
+    dietary: 'Vegetarian options',
+    mobility: 'Avoid steep hikes',
+  })
   const [travelMode, setTravelMode] = useSaved('questline-travel', 'Drive')
   const [gasPrice, setGasPrice] = useSaved('questline-gas', 4.5)
-  const [chatDraft, setChatDraft] = useState('Alex: Tartine Bakery is a must.\nMorgan: Mission Dolores Park after coffee?\nSam: Keep it under $65 each.\nJerry: We need to be back by 6.')
+  const [chatDraft, setChatDraft] = useState(
+    'Alex: Tartine Bakery is a must.\nMorgan: Mission Dolores Park after coffee?\nSam: Keep it under $65 each.\nJerry: We need to be back by 6.',
+  )
   const [messages, setMessages] = useSaved<string[]>('questline-messages', [])
-  const [ranks, setRanks] = useSaved<Record<number, Tier>>('questline-tiers', {})
-  const effectiveRanks = Object.fromEntries(stops.map(stop => [stop.id, ranks[stop.id] ?? (stop.side ? 'C' : 'A')])) as Record<number, Tier>
+  const [ranks, setRanks] = useSaved<Record<number, Tier>>(
+    'questline-tiers',
+    {},
+  )
+  const effectiveRanks = Object.fromEntries(
+    stops.map((stop) => [stop.id, ranks[stop.id] ?? (stop.side ? 'C' : 'A')]),
+  ) as Record<number, Tier>
   function rankPlace(id: number, tier: Tier) {
-    const nextRanks = { ...effectiveRanks, [id]: tier }; setRanks(nextRanks)
-    const next = stops.map(stop => ({ ...stop, side: tiers.indexOf(nextRanks[stop.id]) >= 3 }))
-    next.sort((a, b) => tiers.indexOf(nextRanks[a.id]) - tiers.indexOf(nextRanks[b.id]))
-    revise(next); setNotice(`${stops.find(stop => stop.id === id)?.name} moved to ${tier} tier. Questline priorities updated.`)
+    const nextRanks = { ...effectiveRanks, [id]: tier }
+    setRanks(nextRanks)
+    const next = stops.map((stop) => ({
+      ...stop,
+      side: tiers.indexOf(nextRanks[stop.id]) >= 3,
+    }))
+    next.sort(
+      (a, b) => tiers.indexOf(nextRanks[a.id]) - tiers.indexOf(nextRanks[b.id]),
+    )
+    revise(next)
+    setNotice(
+      `${stops.find((stop) => stop.id === id)?.name} moved to ${tier} tier. Questline priorities updated.`,
+    )
   }
   const [search, setSearch] = useState('')
   const [view, setView] = useState('Map')
   const [planned, setPlanned] = useSaved('questline-planned', false)
   const [dialog, setDialog] = useState('')
   const [editing, setEditing] = useState<Stop | null>(null)
-  const dialogRef = useRef<HTMLDialogElement>(null)
-  useEffect(() => { if (dialog || modal) dialogRef.current?.showModal(); else dialogRef.current?.close() }, [dialog, modal])
-  const current = stops.find(s => s.id === selected) ?? stops[0]
-  const total = stops.filter(s => !s.side).reduce((sum, s) => sum + s.price, 0)
-  function revise(next: Stop[]) { setStops(next); setAccepted(false) }
+  const current = stops.find((s) => s.id === selected) ?? stops[0]
+  const total = stops
+    .filter((s) => !s.side)
+    .reduce((sum, s) => sum + s.price, 0)
+  const revise = useCallback(
+    (next: Stop[]) => {
+      setStops(next)
+      setAccepted(false)
+    },
+    [setStops, setAccepted],
+  )
   function move(id: number, offset: number) {
-    const next = [...stops]; const index = next.findIndex(s => s.id === id); const target = index + offset
+    const next = [...stops]
+    const index = next.findIndex((s) => s.id === id)
+    const target = index + offset
     if (target < 0 || target >= next.length) return
-    ;[next[index], next[target]] = [next[target], next[index]]; revise(next)
+    ;[next[index], next[target]] = [next[target], next[index]]
+    revise(next)
   }
   function exportTrip() {
-    const file = new Blob([JSON.stringify({ trip, stops, votes: partyVotes, done, notes, owners, accepted }, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(file); const link = document.createElement('a'); link.href = url; link.download = 'questline-trip.json'; link.click(); URL.revokeObjectURL(url)
+    const file = new Blob(
+      [
+        JSON.stringify(
+          { trip, stops, votes: partyVotes, done, notes, owners, accepted },
+          null,
+          2,
+        ),
+      ],
+      { type: 'application/json' },
+    )
+    const url = URL.createObjectURL(file)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'questline-trip.json'
+    link.click()
+    URL.revokeObjectURL(url)
     setNotice('Your trip has been exported.')
   }
-  function shareTrip() { navigator.clipboard.writeText(window.location.href).then(() => setNotice('Demo link copied. This demo does not sync between people.')).catch(() => setNotice('Copy the URL from your browser to share this demo.')) }
-  const main = stops.filter(s => !s.side)
-  const displayed = (tab === 'Quest log' ? main : stops).filter(s => filter === 'All' || s.category === filter).filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
-  function voteFor(id: number, choice: string) { setPartyVotes({ ...partyVotes, [id]: { ...partyVotes[id], [voter]: partyVotes[id]?.[voter] === choice ? '' : choice } }) }
-  function vote(choice: string) { voteFor(current.id, choice) }
+  function shareTrip() {
+    navigator.clipboard
+      .writeText(window.location.href)
+      .then(() =>
+        setNotice('Demo link copied. This demo does not sync between people.'),
+      )
+      .catch(() =>
+        setNotice('Copy the URL from your browser to share this demo.'),
+      )
+  }
+  const main = stops.filter((s) => !s.side)
+  const displayed = (tab === 'Quest log' ? main : stops)
+    .filter((s) => filter === 'All' || s.category === filter)
+    .filter((s) => s.name.toLowerCase().includes(search.toLowerCase()))
+  function voteFor(id: number, choice: string) {
+    setPartyVotes({
+      ...partyVotes,
+      [id]: {
+        ...partyVotes[id],
+        [voter]: partyVotes[id]?.[voter] === choice ? '' : choice,
+      },
+    })
+  }
+  function vote(choice: string) {
+    voteFor(current.id, choice)
+  }
   function buildPlan() {
-    const pending = stops.filter(stop => !stop.side)
+    const pending = stops.filter((stop) => !stop.side)
     const ordered: Stop[] = []
     while (pending.length) {
-      const highest = Math.min(...pending.map(stop => tiers.indexOf(effectiveRanks[stop.id])))
-      const candidates = pending.filter(stop => tiers.indexOf(effectiveRanks[stop.id]) === highest)
+      const highest = Math.min(
+        ...pending.map((stop) => tiers.indexOf(effectiveRanks[stop.id])),
+      )
+      const candidates = pending.filter(
+        (stop) => tiers.indexOf(effectiveRanks[stop.id]) === highest,
+      )
       const previous = ordered.at(-1)
-      const next = previous ? candidates.reduce((best, stop) => Math.hypot(stop.x - previous.x, stop.y - previous.y) < Math.hypot(best.x - previous.x, best.y - previous.y) ? stop : best, candidates[0]) : candidates[0]
-      ordered.push(next); pending.splice(pending.findIndex(stop => stop.id === next.id), 1)
+      const next = previous
+        ? candidates.reduce(
+            (best, stop) =>
+              Math.hypot(stop.x - previous.x, stop.y - previous.y) <
+              Math.hypot(best.x - previous.x, best.y - previous.y)
+                ? stop
+                : best,
+            candidates[0],
+          )
+        : candidates[0]
+      ordered.push(next)
+      pending.splice(
+        pending.findIndex((stop) => stop.id === next.id),
+        1,
+      )
     }
-    revise([...ordered, ...stops.filter(stop => stop.side)]); setPlanned(true); setView('Map'); setTab('Questline'); setNotice('Draft route arranged by tier priority and nearby map positions. Review, vote, and adjust together.')
+    revise([...ordered, ...stops.filter((stop) => stop.side)])
+    setPlanned(true)
+    setView('Map')
+    setTab('Questline')
+    setNotice(
+      'Draft route arranged by tier priority and nearby map positions. Review, vote, and adjust together.',
+    )
   }
-  if (!planned) return <main className="setup-page"><SetupHeader/><section className="setup-intro"><span className="eyebrow">A LITTLE PLANNING. A BETTER ADVENTURE.</span><h1>Where will your quest take you?</h1><p>Set the essentials first. Then explore your route, rank the possibilities, and let everyone weigh in.</p></section><form className="setup-grid" onSubmit={e => { e.preventDefault(); buildPlan() }}><article className="desk-card setup-details"><div className="section-title"><h3>Your adventure</h3><span>Start with the basics</span></div><label>Trip name<input required maxLength={70} value={trip.name} onChange={e => setTrip({ ...trip, name: e.target.value })}/></label><div className="form-columns"><label>Date<input required type="date" value={trip.date} onChange={e => setTrip({ ...trip, date: e.target.value })}/></label><label>Daily budget / person ($)<input required type="number" min="1" max="10000" value={trip.budget} onChange={e => setTrip({ ...trip, budget: Number(e.target.value) })}/></label></div><label>Destination<input required value={trip.destination} onChange={e => setTrip({ ...trip, destination: e.target.value })}/></label><label>How will you travel?<select value={travelMode} onChange={e => setTravelMode(e.target.value)}>{['Drive','Walk','Transit'].map(mode => <option key={mode}>{mode}</option>)}</select></label><div className="form-columns"><label>Back by<input type="time" value={constraints.returnBy} onChange={e => setConstraints({ ...constraints, returnBy: e.target.value })}/></label><label>Max walking / leg (minutes)<input type="number" min="0" max="240" value={constraints.maxWalk} onChange={e => setConstraints({ ...constraints, maxWalk: Number(e.target.value) })}/></label></div><label>Food & accessibility preferences<input value={constraints.dietary} onChange={e => setConstraints({ ...constraints, dietary: e.target.value })}/></label><label>Mobility notes<input value={constraints.mobility} onChange={e => setConstraints({ ...constraints, mobility: e.target.value })}/></label></article><article className="desk-card setup-options"><div className="section-title"><h3>The possibilities</h3><span>{stops.length} places</span></div><p className="desk-copy">Choose the stops to start with. You can add places, vote, and change priorities after building the plan.</p><div className="setup-stop-list">{stops.map(stop => <label key={stop.id} className="setup-stop"><input type="checkbox" checked={!stop.side} onChange={() => revise(stops.map(s => s.id === stop.id ? { ...s, side: !s.side } : s))}/><span><strong>{stop.name}</strong><small>{stop.category} · {stop.price ? `$${stop.price} per person` : 'Free'}</small></span><span className="setup-status">{stop.side ? 'Side quest' : 'Main quest'}</span></label>)}</div><div className="setup-summary"><span>{main.length} main stops · {stops.length - main.length} optional</span><strong>${total} / person</strong></div><p className="desk-footnote">This demo uses an illustrated San Francisco map. The route follows tier priority and nearby layout positions, not road routing. Preferences are saved for review; live weather and route validation are not connected.</p><button className="primary setup-build" disabled={!main.length}>Build my questline →</button></article></form></main>
-  return <div className="app">
-    <aside className="rail"><a className="brand" href="#" aria-label="Questline home">q<span>↗</span></a><button className={view === "Map" ? "rail-active" : ""} aria-label="Trip map" onClick={() => setView("Map")}>◇</button><button aria-label="Trip overview" className={view === "Overview" ? "rail-active" : ""} onClick={() => setView("Overview")}>▦</button><button aria-label="Open quest log" onClick={() => { setView('Map'); setTab('Quest log') }}>☷</button><div className="rail-bottom"><span className="avatar">JS</span></div></aside>
-    <div className="workspace">
-      <PlannerHeader onPlanSetup={() => setPlanned(false)} onExport={exportTrip} onShare={shareTrip}/>
-      <section className="trip-heading"><div><div className="eyebrow">A LITTLE ADVENTURE, TOGETHER</div><h1>{trip.name} </h1><p>{new Date(trip.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} <span>·</span> {trip.destination} <span>·</span> 4 adventurers</p></div><div className="trip-actions"><button className="quiet" onClick={() => setDialog("settings")}>Edit trip</button><div className="avatars"><span>JS</span><span>AL</span><span>MK</span><span>+1</span></div><button className="primary" onClick={() => setModal(true)}>＋ Import chat</button></div></section>
-      <nav className="view-nav"><div>{['Map', 'Overview', 'Planning desk'].map(v => <button key={v} className={view === v ? 'active' : ''} onClick={() => setView(v)}>{v === 'Map' ? '◇' : '▦'} {v}</button>)}</div><span>{accepted ? '✓ Questline accepted' : '◌ Draft questline'} · Changes saved locally</span></nav>
-      {view === 'Planning desk' && <section className="planning-desk"><div className="desk-intro"><div><span className="eyebrow">THE GROUP CHAT, WITH A PLAN</span><h2>Gather your party. Chart your quest.</h2></div><span className="local-badge">Local planning workspace</span></div><div className="desk-grid"><article className="desk-card chat-reader"><div className="section-title"><h3>Party conversation</h3><span>Paste your group chat</span></div><p className="desk-copy">Keep the conversation visible while you plan. Messages are saved here; this does not send anything to your group.</p><textarea aria-label="Group conversation" value={chatDraft} onChange={e => setChatDraft(e.target.value)} placeholder="Alex: Let's stop for coffee…"/><button className="primary" disabled={!chatDraft.trim()} onClick={() => { const lines = chatDraft.split('\n').filter(l => l.trim()); setMessages(lines); setNotice(`${lines.length} messages saved to the reader.`) }}>Read conversation →</button><div className="conversation-stream">{messages.length === 0 ? <div className="desk-empty">Your group’s ideas will appear here.<br/>Paste a conversation to get started.</div> : messages.map((m, i) => { const colon = m.indexOf(':'); return <div className="message" key={i}><span className="message-avatar">{colon > 0 ? m.slice(0, 1).toUpperCase() : '•'}</span><div><strong>{colon > 0 ? m.slice(0, colon) : 'Message'}</strong><p>{colon > 0 ? m.slice(colon + 1) : m}</p>{stops.filter(stop => m.toLowerCase().includes(stop.name.toLowerCase())).map(stop => <button key={stop.id} onClick={() => { setSelected(stop.id); setView('Map') }}>⌖ {stop.name} ↗</button>)}</div></div> })}</div></article><div className="desk-center"><article className="desk-card route-graph"><div className="section-title"><h3>Your questline</h3><button className="text-button" onClick={() => { setView('Map'); setTab('Questline') }}>Edit on map →</button></div><p className="desk-copy">Solid connections are the main path. Blue branches are optional side quests.</p><div className="graph-flow">{main.map((stop, index) => <div className="graph-stage" key={stop.id}><button onClick={() => { setSelected(stop.id); setDialog('details') }}><span>{done.includes(stop.id) ? '✓' : index + 1}</span><strong>{stop.name}</strong><small>{stop.time}</small></button>{index < main.length - 1 && <div className="graph-connector">↓</div>}{index === 0 && stops.some(s => s.side) && <div className="graph-branches">{stops.filter(s => s.side).map(side => <button key={side.id} onClick={() => { setSelected(side.id); setDialog('details') }}>↳ <span>✧ {side.name}</span><small>Optional branch</small></button>)}</div>}</div>)}</div>{main.length === 0 && <div className="desk-empty">Promote a waypoint to start your main path.</div>}<div className="graph-footer"><span>● Main path</span><span className="blue">○ Side quest</span><span>Illustrative sequence</span></div></article><TierList options={stops} ranks={effectiveRanks} onRank={rankPlace} voter={voter} onVoter={setVoter} votes={partyVotes} onVote={voteFor}/></div><div className="desk-right"><article className="desk-card"><div className="section-title"><h3>Restrictions & limits</h3><span>Party constraints</span></div><label>Back by<input type="time" value={constraints.returnBy} onChange={e => setConstraints({ ...constraints, returnBy: e.target.value })}/></label><label>Max walking per leg (minutes)<input type="number" min="0" max="240" value={constraints.maxWalk} onChange={e => setConstraints({ ...constraints, maxWalk: Number(e.target.value) })}/></label><label>Food preferences<input value={constraints.dietary} onChange={e => setConstraints({ ...constraints, dietary: e.target.value })}/></label><label>Accessibility & mobility<input value={constraints.mobility} onChange={e => setConstraints({ ...constraints, mobility: e.target.value })}/></label><p className="desk-footnote">Saved preferences for the group to review. Automatic route validation is not connected.</p></article><article className="desk-card"><div className="section-title"><h3>Travel & costs</h3><span>Planning estimates</span></div><div className="mode-switch">{['Drive','Walk','Transit'].map(mode => <button className={travelMode === mode ? 'active' : ''} onClick={() => setTravelMode(mode)} key={mode}>{mode}</button>)}</div><div className="travel-metrics"><div><span>Food + activities</span><strong>${total}<small> / person</small></strong></div><div><span>Sample route distance</span><strong>12<small> miles</small></strong></div><div><span>Sample travel time</span><strong>{travelMode === 'Drive' ? '45' : travelMode === 'Walk' ? '240' : '75'}<small> min</small></strong></div>{travelMode === 'Drive' && <div><span>Fuel estimate · 25 mpg</span><strong>${(12 / 25 * gasPrice).toFixed(2)}<small> / vehicle</small></strong></div>}</div>{travelMode === 'Drive' && <label>Gas price ($ / gallon)<input type="number" min="0" max="20" step="0.1" value={gasPrice} onChange={e => setGasPrice(Number(e.target.value))}/></label>}<p className="desk-footnote">Distance and times use a fixed sample scenario, not live routing. Fuel = 12 miles ÷ 25 mpg × gas price. No fares or parking included.</p></article><article className="desk-card location-card"><span className="location-icon">⌖</span><h3>Find your crew</h3><p>Keep everyone together on the day.</p><span className="connection-status">Location sharing not connected</span><p className="desk-footnote">Apple location and Life360 are future integrations. No location data is collected.</p></article></div></div></section>}
-      {view === 'Overview' && <section className="overview"><div className="overview-hero"><span className="eyebrow">THE PLAN IS COMING TOGETHER</span><h2>Your next good day<br/>starts right here.</h2><p>{stops.length} places to explore. Four people to make memories with.</p><button className="primary" onClick={() => setView('Map')}>Explore the map →</button></div><div className="stats-grid"><article><span>ON THE MAIN QUEST</span><strong>{main.length}</strong><p>Stops worth making time for</p></article><article><span>ESTIMATE / PERSON</span><strong>${total}</strong><p>Of your ${trip.budget} daily budget</p></article><article><span>ADVENTURE PROGRESS</span><strong>{done.filter(id => main.some(s => s.id === id)).length}/{main.length}</strong><p>Main quests completed</p></article></div><div className="overview-grid"><article className="overview-card"><div className="section-title"><h3>Your party</h3><span>4 adventurers</span></div>{[['JS','Jerry','Trip organizer'],['AL','Alex','Coffee & pastry enthusiast'],['MK','Morgan','Taking the scenic route'],['SL','Sam','Here for the food']].map(([initials,name,role]) => <div className="crew-row" key={name}><span className="avatar">{initials}</span><div><strong>{name}</strong><p>{role}</p></div><span className="crew-tag">Ready to explore</span></div>)}</article><article className="overview-card"><div className="section-title"><h3>Before you head out</h3><span>Trip essentials</span></div><TripEssentials travelMode={travelMode}/><button className="overview-action" onClick={() => setDialog('settings')}>◷ Trip date & daily budget <span>→</span></button><button className="overview-action" onClick={() => { setView('Map'); setTab('Questline') }}>◇ Review the questline <span>→</span></button><button className="overview-action" onClick={exportTrip}>↓ Download your trip <span>→</span></button></article></div></section>}
-      <div className={`planner ${view !== 'Map' ? 'hidden' : ''}`}><section className="map-panel"><div className="map-top"><span className="map-pill"><i/> Your next adventure, mapped.</span><span className="map-pill small">{googleMapsEnabled ? 'Google Maps · sample coordinates' : 'Illustrated demo map'}</span></div>
-        {googleMapsEnabled ? <QuestMap stops={stops.map(s => ({ id: s.id, name: s.name, side: s.side, done: done.includes(s.id), lat: s.lat ?? sampleCoords[s.id]?.lat, lng: s.lng ?? sampleCoords[s.id]?.lng }))} selectedId={selected} onSelect={setSelected}/> : <><div className="map-art" style={{ transform: `scale(${zoom})` }}><svg viewBox="0 0 800 700" preserveAspectRatio="none" aria-hidden="true"><defs><pattern id="blocks" width="56" height="43" patternTransform="rotate(-12)" patternUnits="userSpaceOnUse"><rect width="56" height="43" fill="#f1eee6"/><rect x="5" y="5" width="45" height="32" rx="3" fill="#e7e4db"/><path d="M0 0H56V43" stroke="#fffdf6" strokeWidth="5"/></pattern></defs><rect width="800" height="700" fill="url(#blocks)"/><path d="M0 0H175L140 95 85 174 58 290 0 355Z" fill="#bdd6d5"/><path d="M0 315L124 285 173 380 255 414 205 484 0 445Z" fill="#ccdac0"/><path d="M232 543L311 529 340 626 261 647Z" fill="#c5d6b8"/><path d="M310 280L397 267 415 330 323 349Z" fill="#c5d6b8"/><path d="M0 505L800 338M166 0L342 700M0 179L800 91M558 0L720 700" stroke="#ded7bd" strokeWidth="15"/><path d="M0 505L800 338M166 0L342 700M0 179L800 91M558 0L720 700" stroke="#fff9e6" strokeWidth="10"/>{main.length > 0 && stops.filter(s => s.side).map(s => { const anchor = main.reduce((nearest, candidate) => Math.hypot(candidate.x - s.x, candidate.y - s.y) < Math.hypot(nearest.x - s.x, nearest.y - s.y) ? candidate : nearest, main[0]); return <path key={s.id} d={`M${anchor.x * 8} ${anchor.y * 7}L${s.x * 8} ${s.y * 7}`} stroke="#85846b" strokeWidth="3" strokeDasharray="6 7"/> })}{main.length > 1 && <polyline points={main.map(s => `${s.x * 8},${s.y * 7}`).join(' ')} fill="none" stroke="#fff" strokeWidth="12" strokeLinejoin="round"/>}{main.length > 1 && <polyline points={main.map(s => `${s.x * 8},${s.y * 7}`).join(' ')} fill="none" stroke="#657b45" strokeWidth="6" strokeLinejoin="round"/>}</svg>
-          <span className="district d1">PACIFIC HEIGHTS</span><span className="district d2">WESTERN ADDITION</span><span className="district d3">THE MISSION</span><span className="district d4">GOLDEN GATE PARK</span><span className="water-label">Pacific<br/>Ocean</span>
-          {stops.map(s => <button key={s.id} className={`marker ${s.side ? 'side' : ''} ${selected === s.id ? 'selected' : ''}`} style={{ left: `${s.x}%`, top: `${s.y}%` }} onClick={() => setSelected(s.id)} aria-label={`Select ${s.name}`}><span>{done.includes(s.id) ? '✓' : s.side ? '✧' : main.findIndex(m => m.id === s.id) + 1}</span><b>{s.name}</b></button>)}
+  function closeDialog() {
+    setDialog('')
+    setModal(false)
+  }
+  function toggleSide(id: number) {
+    revise(
+      stops.map((stop) =>
+        stop.id === id ? { ...stop, side: !stop.side } : stop,
+      ),
+    )
+  }
+  function importChat(text: string) {
+    const matches = initialStops.filter((stop) =>
+      text.toLowerCase().includes(stop.name.toLowerCase()),
+    )
+    const additions = matches.filter(
+      (stop) => !stops.some((existing) => existing.id === stop.id),
+    )
+    if (additions.length) revise([...stops, ...additions])
+    setModal(false)
+    setNotice(
+      matches.length
+        ? `${matches.length} sample places matched; ${additions.length} added to your board.`
+        : 'No sample places matched. Add a waypoint manually to include a new place.',
+    )
+  }
+  function saveTrip(next: Trip) {
+    setTrip(next)
+    setDialog('')
+    setNotice(
+      'Trip details saved. Rebuild the route to apply planning changes.',
+    )
+  }
+  const saveWaypoint = useCallback(
+    (values: WaypointInput) => {
+      const next: Stop = {
+        ...values,
+        id: editing?.id ?? Date.now(),
+        votes: editing?.votes ?? 0,
+      }
+      revise(
+        editing
+          ? stops.map((stop) => (stop.id === editing.id ? next : stop))
+          : [...stops, next],
+      )
+      setSelected(next.id)
+      setDialog('')
+      setNotice(
+        editing ? 'Waypoint updated.' : 'A new possibility added to your map.',
+      )
+    },
+    [editing, stops, revise, setSelected, setDialog, setNotice],
+  )
+  function removeWaypoint(id: number) {
+    revise(stops.filter((stop) => stop.id !== id))
+    setDone(done.filter((doneId) => doneId !== id))
+    setDialog('')
+    setNotice('Waypoint removed.')
+  }
+  function changeTab(next: string) {
+    setTab(next)
+    setFilter('All')
+    setSearch('')
+  }
+  function openDetails(id: number) {
+    setSelected(id)
+    setDialog('details')
+  }
+  function addWaypoint() {
+    setEditing(null)
+    setDialog('waypoint')
+  }
+  function toggleDone(id: number) {
+    setDone(
+      done.includes(id)
+        ? done.filter((doneId) => doneId !== id)
+        : [...done, id],
+    )
+  }
+  function acceptPlan() {
+    setAccepted(true)
+    changeTab('Quest log')
+    setNotice('Questline accepted. Check off each stop as you go.')
+  }
+  function readConversation(text: string) {
+    const lines = text.split('\n').filter((line) => line.trim())
+    setMessages(lines)
+    setNotice(`${lines.length} messages saved to the reader.`)
+  }
+  function showPlaceOnMap(id: number) {
+    setSelected(id)
+    setView('Map')
+  }
+  function reviewRoute() {
+    setView('Map')
+    setTab('Questline')
+  }
+  if (!planned)
+    return (
+      <SetupPage onBuildPlan={buildPlan}>
+        <TripSetupFields
+          trip={trip}
+          constraints={constraints}
+          travelMode={travelMode}
+          onTripChange={setTrip}
+          onConstraintsChange={setConstraints}
+          onTravelModeChange={setTravelMode}
+        />
+        <StartingPlaces
+          stops={stops}
+          mainCount={main.length}
+          total={total}
+          onToggleSide={toggleSide}
+        />
+      </SetupPage>
+    )
+  return (
+    <div className="app">
+      <NavigationRail
+        view={view}
+        onViewChange={setView}
+        onQuestLog={() => {
+          setView('Map')
+          setTab('Quest log')
+        }}
+      />
+
+      <div className="workspace">
+        <PlannerHeader
+          onPlanSetup={() => setPlanned(false)}
+          onExport={exportTrip}
+          onShare={shareTrip}
+        />
+        <TripHeading
+          trip={trip}
+          onSettings={() => setDialog('settings')}
+          onImport={() => setModal(true)}
+        />
+        <ViewNavigation
+          view={view}
+          accepted={accepted}
+          onViewChange={setView}
+        />
+        {view === 'Planning desk' && (
+          <PlanningDesk
+            conversation={
+              <ConversationReader
+                stops={stops}
+                messages={messages}
+                chatDraft={chatDraft}
+                onDraftChange={setChatDraft}
+                onReadConversation={readConversation}
+                onSelectPlace={showPlaceOnMap}
+              />
+            }
+            route={
+              <RouteGraph
+                stops={stops}
+                done={done}
+                onReviewRoute={reviewRoute}
+                onDetails={openDetails}
+              />
+            }
+            priorities={
+              <TierList
+                options={stops}
+                ranks={effectiveRanks}
+                onRank={rankPlace}
+                voter={voter}
+                onVoter={setVoter}
+                votes={partyVotes}
+                onVote={voteFor}
+              />
+            }
+            constraints={
+              <ConstraintsCard
+                constraints={constraints}
+                onConstraintsChange={setConstraints}
+              />
+            }
+            travel={
+              <TravelCosts
+                total={total}
+                travelMode={travelMode}
+                gasPrice={gasPrice}
+                onTravelModeChange={setTravelMode}
+                onGasPriceChange={setGasPrice}
+              />
+            }
+            location={<LocationCard />}
+          />
+        )}
+        {view === 'Overview' && (
+          <Overview
+            hero={
+              <OverviewHero
+                stopCount={stops.length}
+                onExplore={() => setView('Map')}
+              />
+            }
+            stats={
+              <TripStats
+                mainCount={main.length}
+                total={total}
+                budget={trip.budget}
+                completed={
+                  done.filter((id) => main.some((stop) => stop.id === id))
+                    .length
+                }
+              />
+            }
+            party={<PartyCard />}
+            preparation={
+              <PreparationCard
+                travelMode={travelMode}
+                onSettings={() => setDialog('settings')}
+                onReviewRoute={reviewRoute}
+                onExport={exportTrip}
+              />
+            }
+          />
+        )}
+        <div className={`planner ${view !== 'Map' ? 'hidden' : ''}`}>
+          <MapPanel
+            stops={stops}
+            mapStops={stops.map((s) => ({
+              id: s.id,
+              name: s.name,
+              side: s.side,
+              done: done.includes(s.id),
+              lat: s.lat ?? sampleCoords[s.id]?.lat,
+              lng: s.lng ?? sampleCoords[s.id]?.lng,
+            }))}
+            selectedId={selected}
+            done={done}
+            zoom={zoom}
+            googleMapsEnabled={googleMapsEnabled}
+            onSelect={setSelected}
+            onZoomIn={() => setZoom(Math.min(1.5, zoom + 0.1))}
+            onZoomOut={() => setZoom(Math.max(1, zoom - 0.1))}
+            onReset={() => setZoom(1)}
+          >
+            {current ? (
+              <PlaceCard
+                className="place-card"
+                current={current}
+                number={String(
+                  stops.findIndex((s) => s.id === current.id) + 1,
+                ).padStart(2, '0')}
+                voter={voter}
+                vote={votes[current.id]}
+                onVoterChange={setVoter}
+                onVote={vote}
+                onView={() => setDialog('details')}
+                onToggleSide={() => toggleSide(current.id)}
+              />
+            ) : (
+              <EmptyMap onAddWaypoint={addWaypoint} />
+            )}
+          </MapPanel>
+          <QuestBoard
+            stops={stops}
+            main={main}
+            displayed={displayed}
+            selected={selected}
+            tab={tab}
+            filter={filter}
+            search={search}
+            partyVotes={partyVotes}
+            owners={owners}
+            done={done}
+            accepted={accepted}
+            total={total}
+            trip={trip}
+            onTabChange={changeTab}
+            onFilterChange={setFilter}
+            onSearchChange={setSearch}
+            onSelect={setSelected}
+            onMove={move}
+            onDetails={openDetails}
+            onToggleDone={toggleDone}
+            onAddWaypoint={addWaypoint}
+            onBuildPlan={buildPlan}
+            onAccept={acceptPlan}
+          />
         </div>
-        <div className="map-controls"><button aria-label="Zoom in" onClick={() => setZoom(Math.min(1.5, zoom + .1))}>＋</button><button aria-label="Zoom out" onClick={() => setZoom(Math.max(1, zoom - .1))}>−</button><button aria-label="Reset map view" onClick={() => setZoom(1)}>⌖</button></div></>}
-        {current ? <QuestCard className="place-card" title={current.name} description={current.description} kind={current.side ? 'side' : 'main'} number={String(stops.findIndex(s => s.id === current.id) + 1).padStart(2, '0')} status={current.price ? `$${current.price} / person · ${current.time}` : `Free · ${current.time}`} onView={() => setDialog('details')}><label className="voter-inline">Voting as <select aria-label="Active voting member" value={voter} onChange={e => setVoter(e.target.value)}>{['Jerry','Alex','Morgan','Sam'].map(name => <option key={name}>{name}</option>)}</select></label><div className="vote-row"><span>Your vote</span>{['I’m in', 'Maybe', 'Skip'].map((v, i) => <button key={v} className={votes[current.id] === v ? 'voted' : ''} onClick={() => vote(v)}>{['↗', '〜', '−'][i]} {v}</button>)}</div><button className="text-button" onClick={() => revise(stops.map(s => s.id === current.id ? { ...s, side: !s.side } : s))}>Make {current.side ? 'main' : 'side'} quest ↗</button></QuestCard> : <div className="empty-map"><h2>A fresh start.</h2><p>Add your first waypoint to start an adventure.</p><button className="primary" onClick={() => { setEditing(null); setDialog("waypoint") }}>＋ Add waypoint</button></div>}
-        <div className="map-legend"><span><i/> Main quest</span><span><i className="outline"/> Side quest</span><span>Route is illustrative</span></div>
-      </section>
-      <aside className="sidebar"><div className="panel-heading"><div><h2>The quest board</h2><p>Less scrolling. More going.</p></div></div><div className="tabs">{['Waypoints', 'Questline', 'Quest log'].map(t => <button className={tab === t ? 'active' : ''} key={t} onClick={() => { setTab(t); setFilter('All'); setSearch('') }}>{t}</button>)}</div>
-      {tab === 'Quest log' ? <div className="intro"><h3>{accepted ? 'Adventure in progress' : 'Your day, one stop at a time'}</h3><p>{done.filter(id => main.some(s => s.id === id)).length} of {main.length} main quests complete</p><progress value={done.filter(id => main.some(s => s.id === id)).length} max={main.length || 1}/></div> : <div className="intro"><h3>{tab === 'Waypoints' ? 'Good places. Great company.' : 'A little plan. A lot to discover.'}</h3><p>{stops.length} waypoints · {main.length} main quests · {stops.length - main.length} side quests</p></div>}
-      <div className="board-tools"><label className="search-field"><span>⌕</span><input aria-label="Search waypoints" placeholder="Find a waypoint…" value={search} onChange={e => setSearch(e.target.value)}/></label><button aria-label="Add waypoint" onClick={() => { setEditing(null); setDialog('waypoint') }}>＋</button></div>
-      {tab === 'Questline' && <div className="route-summary"><button className="text-button" onClick={buildPlan}>Rebuild route →</button><span>↗ {main.length} main stops</span><span>✧ {stops.length - main.length} optional detours</span><p>Reorder stops below to shape your day. Travel times and map geometry are illustrative.</p></div>}
-      {tab === 'Quest log' && !accepted && <div className="inline-warning">Accept your questline to begin checking off stops.</div>}
-      {tab === 'Waypoints' && <div className="filters">{['All', 'Eat', 'Do'].map(f => <button key={f} className={filter === f ? 'active' : ''} onClick={() => setFilter(f)}>{f === 'Eat' ? '☕ ' : f === 'Do' ? '✳ ' : ''}{f}</button>)}</div>}
-      <div className="stop-list">{displayed.length === 0 && <div className="empty-list"><strong>No waypoints found</strong><p>Try another search or add a place to explore.</p></div>}{displayed.map(s => <div key={s.id} className={`stop-row ${selected === s.id ? 'chosen' : ''}`}><button className="stop-select" onClick={() => setSelected(s.id)}><span className={`stop-number ${s.side ? 'side' : ''}`}>{s.side ? '✧' : main.findIndex(m => m.id === s.id) + 1}</span><span className="stop-info"><strong>{s.name}</strong><small>{tab === 'Questline' ? s.time : s.category} <span>·</span> {s.price ? `$${s.price}` : 'Free'}</small><QuestBadge kind={s.side ? "side" : "main"}/></span><span className="vote-count">↗ {Object.values(partyVotes[s.id] ?? {}).filter(v => v === 'I’m in').length}</span></button>{tab === 'Questline' && <div className="row-actions"><button disabled={stops[0]?.id === s.id} aria-label={`Move ${s.name} earlier`} onClick={() => move(s.id, -1)}>↑ Earlier</button><button disabled={stops.at(-1)?.id === s.id} aria-label={`Move ${s.name} later`} onClick={() => move(s.id, 1)}>↓ Later</button><button onClick={() => { setSelected(s.id); setDialog('details') }}>Edit</button></div>}{tab === 'Quest log' && <p className="owner-label">Owner: {owners[s.id] || 'Anyone in the crew'}</p>}{tab === 'Quest log' && <label className="complete"><input type="checkbox" disabled={!accepted} checked={done.includes(s.id)} onChange={() => setDone(done.includes(s.id) ? done.filter(id => id !== s.id) : [...done, s.id])}/> Quest complete</label>}</div>)}</div>
-      <div className="board-bottom"><div className="tip"><p>A side quest is a possibility, not a promise.<br/><strong>Leave a little room for the unexpected.</strong></p></div><div className="budget"><div><small>EST. FOOD + ACTIVITIES / PERSON</small><strong>${main.reduce((sum, s) => sum + s.price, 0)}<span> / day</span></strong></div><span className="budget-note">Budget ${trip.budget}<br/>Transport excluded</span></div><div className={`budget-meter ${total > trip.budget ? "over" : ""}`}><div style={{ width: `${Math.min(100, total / trip.budget * 100)}%` }}/></div>{total > trip.budget && <p className="budget-warning">${total - trip.budget} above your daily budget. Consider moving a stop to a side quest.</p>}<button disabled={main.length === 0} className="primary accept" onClick={() => { setAccepted(true); setTab('Quest log'); setFilter('All'); setSearch(''); setNotice('Questline accepted. Check off each stop as you go.') }}>{accepted ? 'Open your quest log →' : 'Accept this questline →'}</button><p className="footer-note">Made for the plans that finally leave the group chat.</p></div></aside></div>
-      <footer className="rpg-credit">Questline · Every trip is a quest. <span>UI assets by <a href="https://kenney.nl" target="_blank" rel="noreferrer">Kenney</a> · CC0</span></footer>
-      {notice && <div className="notice" role="status">{notice}<button aria-label="Dismiss notification" onClick={() => setNotice('')}>×</button></div>}
-      <dialog ref={dialogRef} className="full-dialog" onCancel={() => { setDialog(''); setModal(false) }} onClick={e => { if(e.target === e.currentTarget) { setDialog(''); setModal(false) } }}><div className="dialog-content"><button className="modal-close" aria-label="Close dialog" onClick={() => { setDialog(''); setModal(false) }}>×</button>
-      {modal && <><span className="eyebrow">FROM CHAT TO ADVENTURE</span><h2>Bring the conversation along.</h2><p>Paste your chat. This local demo can match names of the five sample places; new places can be added manually.</p><textarea autoFocus value={transcript} onChange={e => setTranscript(e.target.value)} placeholder={'Alex: We should go to Tartine Bakery!\nMorgan: Mission Dolores Park after?'} /><div className="import-preview"><strong>{transcript.split('\n').filter(l => l.trim()).length} messages · {initialStops.filter(s => transcript.toLowerCase().includes(s.name.toLowerCase())).length} sample places matched</strong>{initialStops.filter(s => transcript.toLowerCase().includes(s.name.toLowerCase())).map(s => <span key={s.id}>✓ {s.name}</span>)}</div><button className="primary" disabled={!transcript.trim()} onClick={() => { const matches = initialStops.filter(s => transcript.toLowerCase().includes(s.name.toLowerCase())); const additions = matches.filter(s => !stops.some(existing => existing.id === s.id)); if(additions.length) revise([...stops, ...additions]); setModal(false); setNotice(matches.length ? `${matches.length} sample places matched; ${additions.length} added to your board.` : 'No sample places matched. Add a waypoint manually to include a new place.') }}>Add matched places →</button></>}
-      {dialog === 'settings' && <form onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); setTrip({ name: String(data.get('name')).trim(), date: String(data.get('date')), destination: String(data.get('destination')).trim(), budget: Number(data.get('budget')) }); setDialog(''); setNotice('Trip details saved. Rebuild the route to apply planning changes.') }}><span className="eyebrow">MAKE IT YOURS</span><h2>Every adventure starts with a plan.</h2><label>Trip name<input name="name" required maxLength={70} defaultValue={trip.name}/></label><div className="form-columns"><label>Date<input name="date" type="date" required defaultValue={trip.date}/></label><label>Daily budget / person ($)<input name="budget" type="number" min="1" max="10000" required defaultValue={trip.budget}/></label></div><label>Destination<input name="destination" required maxLength={100} defaultValue={trip.destination}/></label><p>Changing the destination updates your trip label. The illustrated map remains San Francisco.</p><button className="primary">Save trip details →</button></form>}
-      {dialog === 'waypoint' && <form key={editing?.id ?? 'new'} onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); const next: Stop = { id: editing?.id ?? Date.now(), name: String(data.get('name')).trim(), category: String(data.get('category')), description: String(data.get('description')).trim(), price: Number(data.get('price')), x: Number(data.get('x')), y: Number(data.get('y')), side: data.get('side') === 'on', votes: editing?.votes ?? 0, time: String(data.get('time')) }; revise(editing ? stops.map(s => s.id === editing.id ? next : s) : [...stops, next]); setSelected(next.id); setDialog(''); setNotice(editing ? 'Waypoint updated.' : 'A new possibility added to your map.') }}><span className="eyebrow">ONE MORE GOOD PLACE</span><h2>{editing ? 'Edit your waypoint.' : 'Where should we go?'}</h2><label>Place name<input autoFocus name="name" required maxLength={80} defaultValue={editing?.name}/></label><div className="form-columns"><label>Category<select name="category" defaultValue={editing?.category ?? 'Do'}><option>Do</option><option>Eat</option><option>Stay</option><option>Along the way</option></select></label><label>Estimate / person ($)<input name="price" type="number" min="0" max="10000" required defaultValue={editing?.price ?? 0}/></label></div><label>What makes it worth a stop?<textarea name="description" maxLength={250} defaultValue={editing?.description}/></label><label>Arrival time or detour<input name="time" required defaultValue={editing?.time ?? '2:00 PM'}/></label><details><summary>Position on the illustrated map</summary><p>Percent from the left and top. These are layout positions, not geographic coordinates.</p><div className="form-columns"><label>Horizontal (%)<input name="x" type="number" min="8" max="90" defaultValue={editing?.x ?? 65}/></label><label>Vertical (%)<input name="y" type="number" min="10" max="90" defaultValue={editing?.y ?? 60}/></label></div></details><label className="check-label"><input name="side" type="checkbox" defaultChecked={editing?.side ?? true}/> Keep this as an optional side quest</label><button className="primary">{editing ? 'Save waypoint' : 'Add to the adventure'} →</button></form>}
-      {dialog === 'details' && current && <><span className="eyebrow">{current.category.toUpperCase()} · {current.side ? 'SIDE QUEST' : 'MAIN QUEST'}</span><h2>{current.name}</h2><p>{current.description}</p><div className="detail-stats"><span>{current.price ? `$${current.price} / person` : 'Free to explore'}</span><span>{current.time}</span><span>↗ {Object.values(partyVotes[current.id] ?? {}).filter(v => v === 'I’m in').length} interested</span></div><label>Who’s taking the lead?<select value={owners[current.id] || ''} onChange={e => setOwners({ ...owners, [current.id]: e.target.value })}><option value="">Anyone in the crew</option>{['Jerry','Alex','Morgan','Sam'].map(name => <option key={name}>{name}</option>)}</select></label><label>Notes & things to remember<textarea placeholder="Bring a picnic blanket, check opening hours…" value={notes[current.id] || ''} onChange={e => setNotes({ ...notes, [current.id]: e.target.value })}/></label><p className="saved-hint">Notes and owner changes save automatically on this device.</p><div className="detail-actions"><button className="quiet" onClick={() => { setEditing(current); setDialog('waypoint') }}>Edit waypoint</button><button className="quiet" onClick={() => { revise(stops.map(s => s.id === current.id ? { ...s, side: !s.side } : s)); setNotice('Questline updated. Review and accept the new draft.') }}>Make {current.side ? 'main' : 'side'} quest</button><button className="danger" onClick={() => setDialog('remove')}>Remove</button></div></>}
-      {dialog === 'remove' && current && <><span className="eyebrow">EDIT YOUR ADVENTURE</span><h2>Remove {current.name}?</h2><p>This removes the waypoint from your board and illustrated route.</p><div className="detail-actions"><button className="quiet" onClick={() => setDialog('details')}>Keep waypoint</button><button className="danger" onClick={() => { revise(stops.filter(s => s.id !== current.id)); setDone(done.filter(id => id !== current.id)); setDialog(''); setNotice('Waypoint removed.') }}>Remove waypoint</button></div></>}
-      </div></dialog>
-    </div></div>
+        <AppFooter />
+        {notice && <Notice message={notice} onDismiss={() => setNotice('')} />}
+        <DialogHost open={Boolean(dialog || modal)} onClose={closeDialog}>
+          {modal && (
+            <ImportChatDialog
+              transcript={transcript}
+              matches={initialStops.filter((stop) =>
+                transcript.toLowerCase().includes(stop.name.toLowerCase()),
+              )}
+              onTranscriptChange={setTranscript}
+              onImport={importChat}
+            />
+          )}
+          {dialog === 'settings' && (
+            <TripSettingsDialog trip={trip} onSaveTrip={saveTrip} />
+          )}
+          {dialog === 'waypoint' && (
+            <WaypointDialog
+              editing={editing}
+              onSaveWaypoint={saveWaypoint}
+            />
+          )}
+          {dialog === 'details' && current && (
+            <PlaceDetailsDialog
+              current={current}
+              interested={
+                Object.values(partyVotes[current.id] ?? {}).filter(
+                  (v) => v === 'I’m in',
+                ).length
+              }
+              owner={owners[current.id] || ''}
+              note={notes[current.id] || ''}
+              onOwnerChange={(name) =>
+                setOwners({ ...owners, [current.id]: name })
+              }
+              onNoteChange={(text) =>
+                setNotes({ ...notes, [current.id]: text })
+              }
+              onEdit={() => {
+                setEditing(current)
+                setDialog('waypoint')
+              }}
+              onToggleSide={() => {
+                toggleSide(current.id)
+                setNotice('Questline updated. Review and accept the new draft.')
+              }}
+              onRemove={() => setDialog('remove')}
+            />
+          )}
+          {dialog === 'remove' && current && (
+            <RemoveWaypointDialog
+              current={current}
+              onKeep={() => setDialog('details')}
+              onRemove={() => removeWaypoint(current.id)}
+            />
+          )}
+        </DialogHost>
+      </div>
+    </div>
+  )
 }
 export default App

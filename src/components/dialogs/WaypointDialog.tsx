@@ -1,0 +1,117 @@
+import type { Stop, WaypointInput } from '../../demo/types'
+
+export type WaypointDialogProps = {
+  editing: Stop | null
+  onSaveWaypoint: (waypoint: WaypointInput) => void
+}
+export function WaypointDialog({
+  editing,
+  onSaveWaypoint,
+}: WaypointDialogProps) {
+  return (
+    <form
+      key={editing?.id ?? 'new'}
+      onSubmit={(e) => {
+        e.preventDefault()
+        const data = new FormData(e.currentTarget)
+        onSaveWaypoint({
+          name: String(data.get('name')).trim(),
+          category: String(data.get('category')),
+          description: String(data.get('description')).trim(),
+          price: Number(data.get('price')),
+          x: Number(data.get('x')),
+          y: Number(data.get('y')),
+          side: data.get('side') === 'on',
+          time: String(data.get('time')),
+        })
+      }}
+    >
+      <span className="eyebrow">ONE MORE GOOD PLACE</span>
+      <h2>{editing ? 'Edit your waypoint.' : 'Where should we go?'}</h2>
+      <label>
+        Place name
+        <input
+          autoFocus
+          name="name"
+          required
+          maxLength={80}
+          defaultValue={editing?.name}
+        />
+      </label>
+      <div className="form-columns">
+        <label>
+          Category
+          <select name="category" defaultValue={editing?.category ?? 'Do'}>
+            <option>Do</option>
+            <option>Eat</option>
+            <option>Stay</option>
+            <option>Along the way</option>
+          </select>
+        </label>
+        <label>
+          Estimate / person ($)
+          <input
+            name="price"
+            type="number"
+            min="0"
+            max="10000"
+            required
+            defaultValue={editing?.price ?? 0}
+          />
+        </label>
+      </div>
+      <label>
+        What makes it worth a stop?
+        <textarea
+          name="description"
+          maxLength={250}
+          defaultValue={editing?.description}
+        />
+      </label>
+      <label>
+        Arrival time or detour
+        <input name="time" required defaultValue={editing?.time ?? '2:00 PM'} />
+      </label>
+      <details>
+        <summary>Position on the illustrated map</summary>
+        <p>
+          Percent from the left and top. These are layout positions, not
+          geographic coordinates.
+        </p>
+        <div className="form-columns">
+          <label>
+            Horizontal (%)
+            <input
+              name="x"
+              type="number"
+              min="8"
+              max="90"
+              defaultValue={editing?.x ?? 65}
+            />
+          </label>
+          <label>
+            Vertical (%)
+            <input
+              name="y"
+              type="number"
+              min="10"
+              max="90"
+              defaultValue={editing?.y ?? 60}
+            />
+          </label>
+        </div>
+      </details>
+      <label className="check-label">
+        <input
+          name="side"
+          type="checkbox"
+          defaultChecked={editing?.side ?? true}
+        />{' '}
+        Keep this as an optional side quest
+      </label>
+      <button className="primary">
+        {editing ? 'Save waypoint' : 'Add to the adventure'} →
+      </button>
+    </form>
+  )
+}

@@ -61,6 +61,13 @@ Shared trip links have the form `/t/<tripId>`. Vite's dev and preview servers al
 `src/state/` holds the session hook (create, join, rejoin after a rejected token) and a trip
 provider that polls `GET /trips/{id}?revision=N` every 3 seconds while the tab is visible.
 
+### Frontend composition
+
+`src/App.tsx` owns the demo's state, persistence, and actions. Individual panels receive typed
+props and action callbacks; the planning desk and overview compose panels through named slots.
+See [UI composition](docs/ui-composition.md) for the component inventory, relocation examples,
+and the styling boundaries to preserve when rearranging the page.
+
 ### Google map (optional)
 
 The map view uses the Maps JavaScript API when a browser key is configured, and falls back to the
