@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 type Conditions = { weather: string; temperature: number; hours: number; miles: number }
 const defaults: Conditions = { weather: 'Mild', temperature: 65, hours: 6, miles: 12 }
-export function TripEssentials({ travelMode }: { travelMode: string }) {
-  const [conditions, setConditions] = useState<Conditions>(() => { try { return JSON.parse(localStorage.getItem('questline-conditions') || 'null') ?? defaults } catch { return defaults } })
-  const [packed, setPacked] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('questline-packed') || '[]') } catch { return [] } })
-  useEffect(() => { try { localStorage.setItem('questline-conditions', JSON.stringify(conditions)); localStorage.setItem('questline-packed', JSON.stringify(packed)) } catch { /* Storage can be disabled. */ } }, [conditions, packed])
+export function TripEssentials({ travelMode, storageKey }: { travelMode: string; storageKey?: string }) {
+  const suffix = storageKey ? `:${storageKey}` : ''
+  const [conditions, setConditions] = useState<Conditions>(() => { try { return JSON.parse(localStorage.getItem(`questline-conditions${suffix}`) || 'null') ?? defaults } catch { return defaults } })
+  const [packed, setPacked] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem(`questline-packed${suffix}`) || '[]') } catch { return [] } })
+  useEffect(() => { try { localStorage.setItem(`questline-conditions${suffix}`, JSON.stringify(conditions)); localStorage.setItem(`questline-packed${suffix}`, JSON.stringify(packed)) } catch { /* Storage can be disabled. */ } }, [conditions, packed, suffix])
   const items = [
     { id: 'shoes', name: travelMode === 'Walk' ? 'Supportive walking shoes' : 'Comfortable shoes', reason: travelMode === 'Walk' ? `${conditions.miles} miles planned on foot.` : 'For walking between stops.', group: 'Wear' },
     ...(conditions.temperature < 60 || conditions.weather === 'Windy' ? [{ id: 'warm', name: 'Warm layer or windbreaker', reason: conditions.weather === 'Windy' ? 'Wind can make exposed stops feel cooler.' : `${conditions.temperature}°F: pack a layer for cooler stops.`, group: 'Wear' }] : conditions.temperature < 75 ? [{ id: 'light', name: 'A light layer', reason: 'Useful when the temperature changes through the day.', group: 'Wear' }] : [{ id: 'breathable', name: 'Light, breathable clothing', reason: `${conditions.temperature}°F: dress for a warm day.`, group: 'Wear' }]),

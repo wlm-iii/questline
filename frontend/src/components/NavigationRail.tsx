@@ -2,11 +2,14 @@ export type NavigationRailProps = {
   view: string
   onViewChange: (view: string) => void
   onQuestLog: () => void
+  /** The viewer's initials; defaults to the demo's. */
+  initials?: string
 }
 export function NavigationRail({
   view,
   onViewChange,
   onQuestLog,
+  initials = 'JS',
 }: NavigationRailProps) {
   return (
     <aside className="rail">
@@ -31,7 +34,7 @@ export function NavigationRail({
         ☷
       </button>
       <div className="rail-bottom">
-        <span className="avatar">JS</span>
+        <span className="avatar">{initials}</span>
       </div>
     </aside>
   )

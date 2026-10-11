@@ -2,11 +2,14 @@ export type ViewNavigationProps = {
   view: string
   accepted: boolean
   onViewChange: (view: string) => void
+  /** Replaces the demo's "Draft questline · Changes saved locally". */
+  status?: string
 }
 export function ViewNavigation({
   view,
   accepted,
   onViewChange,
+  status,
 }: ViewNavigationProps) {
   return (
     <nav className="view-nav">
@@ -22,8 +25,12 @@ export function ViewNavigation({
         ))}
       </div>
       <span>
-        {accepted ? '✓ Questline accepted' : '◌ Draft questline'} · Changes
-        saved locally
+        {status ?? (
+          <>
+            {accepted ? '✓ Questline accepted' : '◌ Draft questline'} · Changes
+            saved locally
+          </>
+        )}
       </span>
     </nav>
   )
