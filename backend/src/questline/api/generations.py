@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from questline.schemas import (
 )
 
 router = APIRouter(tags=["generations"])
+BUILD_TIMEOUT = timedelta(minutes=5)
 
 
 @router.post("/trips/{trip_id}/plan-generations", response_model=GenerationResult, status_code=202)
@@ -52,6 +54,12 @@ async def create_generation(
             PlanGeneration.trip_id == trip_id, PlanGeneration.status.in_(["queued", "running"])
         )
     )
+    if active and active.created_at < datetime.now(UTC) - BUILD_TIMEOUT:
+        # Normally stalled jobs are retried within a minute or two; this only catches builds that
+        # never ran (for example, no worker), so they stop blocking new requests.
+        active.status = "failed"
+        active.error = "The build timed out. Submit a new request to try again."
+        active = None
     if active:
         if active.budget_preset != body.budget_preset:
             raise HTTPException(

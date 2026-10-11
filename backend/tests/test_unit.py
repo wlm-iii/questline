@@ -177,3 +177,19 @@ def test_spec_graph_fields_are_accepted():
     )
     assert graph.nodes[2].detour_min is None
     assert graph.edges[0].polyline == "fixture-polyline"
+
+
+async def test_in_process_worker_restarts_after_a_crash():
+    from questline.main import supervise_worker
+
+    class Queue:
+        runs = 0
+
+        async def run_worker_async(self, **kwargs):
+            self.runs += 1
+            if self.runs == 1:
+                raise RuntimeError("connection lost")
+
+    queue = Queue()
+    await supervise_worker(queue, restart_delay=0)  # type: ignore[arg-type]
+    assert queue.runs == 2

@@ -17,7 +17,8 @@ async def generate_plan(
         generation = await session.get(PlanGeneration, generation_id)
         if generation is None:
             raise ValueError("Generation does not exist")
-        if generation.status == "succeeded":
+        # Failed is final, including builds that timed out before a worker ran them.
+        if generation.status in ("succeeded", "failed"):
             return
         trip = await session.get(Trip, generation.trip_id, with_for_update=True)
         assert trip is not None
