@@ -436,7 +436,16 @@ ignores everything sent from its own account.
 Delivery is at least once. The saved cursor never moves past an unsent row, and the backend
 dedupes by message `guid`. Logs carry row IDs and counts, never message text.
 
-Manual check once the endpoints exist: `imsg chats --json` lists the test group;
+**One person, two places.** Someone who joined on the web and then chats from iMessage should
+send `@questline I'm <their web name>` in the group. If exactly one member with that name has no
+handle yet, the handle joins that member, and anything the handle already did (messages, votes,
+mentions, tasks) moves over; otherwise the handle's own member is renamed.
+
+`@questline build` replies with the main and side quest counts, the estimate, up to two lines on
+what changed since the last build, and any stops with split votes. `@questline add <place>` only
+accepts results near the trip; include the city if it can't find one.
+
+Manual check: `imsg chats --json` lists the test group;
 `@questline link <trip_id>` in the group posts the notice; a normal message reaches the trip
 within ~15 s; a ❤️ tapback on a message that names one place becomes an *I'm in* vote.
 

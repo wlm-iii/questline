@@ -76,7 +76,11 @@ Errors use `{error: {code, message}}`; conflict errors may also include `generat
 - Successful output is a **draft** plan, saved atomically with `current_plan_id` and the preset.
 - Failure leaves the previous successful plan/preset unchanged. Errors are sanitized.
 - Completed task replay does not overwrite edited plans. Each new generation creates a new plan.
-- Stalled-job recovery/timeouts and a partial unique active-job index remain Harden work.
+- A periodic task (every minute) requeues jobs whose worker missed heartbeats for 30 seconds, so a
+  killed or restarted worker doesn't strand a trip's queue lock. A build still queued or running
+  after 5 minutes is failed when a new one is requested, and failed builds never save a plan.
+  The in-process worker restarts itself after a crash. A partial unique active-job index remains
+  Harden work.
 
 ## Provider and graph boundaries
 
