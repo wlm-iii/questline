@@ -10,6 +10,8 @@ MAX_NAME_CHARS = 60
 _PREFIX = re.compile(r"^\s*@questline(?:\s+|$)(.*)$", re.IGNORECASE | re.DOTALL)
 # Trip IDs are random URL-safe text (SPEC §9), not UUIDs.
 _TRIP_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# A pasted share link (`<web root>/t/<trip_id>`), from any host since the web root varies.
+_SHARE_LINK = re.compile(r"^https?://[^/\s]+/t/([A-Za-z0-9_-]{1,64})/?(?:[?#]\S*)?$", re.IGNORECASE)
 _SET_NAME = re.compile(r"^i['’]m\s+(.+)$", re.IGNORECASE | re.DOTALL)
 
 
@@ -62,6 +64,8 @@ def parse_command(text: str) -> Command | None:
     if verb == "link":
         if not argument:
             return Link(None)
+        if share_link := _SHARE_LINK.match(argument):
+            return Link(share_link.group(1))
         return Link(argument) if _TRIP_ID.match(argument) else Help()
     if verb == "unlink" and not argument:
         return Unlink()

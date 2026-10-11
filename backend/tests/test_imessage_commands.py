@@ -32,6 +32,33 @@ def test_link_without_id_asks_for_the_trip_link():
     assert parse_command("@questline link") == Link(trip_id=None)
 
 
+@pytest.mark.parametrize(
+    "link",
+    [
+        f"http://10.9.189.155:5173/t/{TRIP_ID}",
+        f"https://questline.example.com/t/{TRIP_ID}/",
+        f"https://questline.example.com/t/{TRIP_ID}?ref=share#map",
+        f"HTTPS://Questline.example.com/t/{TRIP_ID}",
+    ],
+)
+def test_link_with_pasted_share_link(link):
+    assert parse_command(f"@questline link {link}") == Link(trip_id=TRIP_ID)
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "https://questline.example.com/t/",
+        "https://questline.example.com/x/abc123",
+        "https://questline.example.com/t/abc123/extra",
+        f"https://questline.example.com/t/{'a' * 65}",
+        f"ftp://questline.example.com/t/{TRIP_ID}",
+    ],
+)
+def test_link_with_other_url_is_help(link):
+    assert parse_command(f"@questline link {link}") == Help()
+
+
 @pytest.mark.parametrize("trip_id", ["abc/123", "a" * 65, "two words"])
 def test_link_with_malformed_id_is_help(trip_id):
     assert parse_command(f"@questline link {trip_id}") == Help()
