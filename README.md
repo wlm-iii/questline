@@ -9,7 +9,7 @@ The product and implementation spec is in [docs/SPEC.md](docs/SPEC.md).
 
 ## Stack and current scope
 
-- **React + TypeScript + Vite** frontend scaffold at the repository root.
+- **React + TypeScript + Vite** + TailwindCSS frontend scaffold at the repository root.
 - **Python 3.12 + FastAPI**, Pydantic, SQLAlchemy, psycopg, and Alembic.
 - **PostgreSQL**, hosted on Supabase for a shared environment or Docker locally.
 - **Procrastinate** for durable PostgreSQL-backed background jobs; no Redis required.
