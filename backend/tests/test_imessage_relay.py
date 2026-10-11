@@ -469,7 +469,7 @@ async def test_add_unknown_place(relay, api, sender):
     linked(api)
     api.place_error = NotFound(404, "place_not_found", "No match")
     await relay.handle(row(1, text="@questline add zzzz"))
-    assert replies(sender) == ["Couldn't find that place — try adding the city."]
+    assert replies(sender) == ["Couldn't find that place near this trip — try adding the city."]
 
 
 async def test_set_name_is_saved_and_sent(relay, api, sender, state_path):
