@@ -109,7 +109,7 @@ builds. Run the README checks and full PostgreSQL suite against a disposable `_t
 Mocks/fake providers consume no Gemini/Google quota. Live discovery/selection/pricing/routing still
 need an approved smoke test; the price-refresh endpoint currently has no dedicated UI control.
 
-Level 2: opening hours, strict daily feasibility with bounded demote-and-retry. Gemini Resolve,
-routed side polylines, and preserve-previous-derived-values/`derived_stale` on edit routing failure
+Level 2: opening hours, strict daily feasibility with bounded demote-and-retry. Gemini Resolve
+and preserve-previous-derived-values/`derived_stale` on edit routing failure
 remain separate work. Public real-provider deployment still requires Google attribution and
 content retention/refresh/removal across waypoints, endpoints, snapshots and route content.
