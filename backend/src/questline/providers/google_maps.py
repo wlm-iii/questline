@@ -1,4 +1,4 @@
-"""Bounded server-side Places API (New) calls; no inferred prices or opening hours."""
+"""Bounded server-side Places API (New) calls; prices come only from Google price levels."""
 
 import asyncio
 import math
@@ -8,6 +8,7 @@ import unicodedata
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from questline.pricing import GOOGLE_PRICE_LEVELS, estimate
 from questline.providers.errors import ProviderUnavailable
 from questline.providers.maps import ResolvedPlace, SearchBounds
 from questline.schemas import Endpoint
@@ -15,7 +16,7 @@ from questline.schemas import Endpoint
 SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 FIELD_MASK = (
     "places.id,places.displayName,places.formattedAddress,places.location,"
-    "places.googleMapsUri,places.types"
+    "places.googleMapsUri,places.types,places.priceLevel"
 )
 
 
@@ -40,6 +41,7 @@ class GooglePlace(BaseModel):
     location: Location
     googleMapsUri: str | None = Field(default=None, max_length=1000)
     types: list[str] = []
+    priceLevel: str | None = Field(default=None, max_length=100)
 
 
 def category(types: list[str]) -> str:
@@ -124,12 +126,19 @@ class GoogleMaps:
             matched = mentioned & tokens(place.displayName.text)
             if not mentioned or len(matched) < math.ceil(len(mentioned) * 0.6):
                 return None
+        kind = category(place.types)
+        level = GOOGLE_PRICE_LEVELS.get(place.priceLevel or "")
+        cost = estimate(kind, level)
         return ResolvedPlace(
             google_place_id=place.id,
             name=place.displayName.text,
-            category=category(place.types),
+            category=kind,
             address=place.formattedAddress,
             lat=place.location.latitude,
             lng=place.location.longitude,
             google_maps_uri=place.googleMapsUri,
+            price_level=level,
+            est_cost_low=cost[0] if cost else None,
+            est_cost_high=cost[1] if cost else None,
+            cost_basis=cost[2] if cost else None,
         )

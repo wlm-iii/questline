@@ -89,8 +89,8 @@ async def test_real_extraction_pipeline_preserves_evidence_and_skips_bad_matches
     assert len(state["trip"]["unresolved_mentions"]) == 2
     assert len(state["messages"]) == 3
     assert state["votes"] == []
-    # Planning is still deliberately unavailable, not a fake Gemini success.
-    assert (await request_generation(client, trip_id)).status_code == 503
+    # Configured Gemini planning accepts the build; the job itself is not run offline here.
+    assert (await request_generation(client, trip_id)).status_code == 202
 
 
 async def test_missing_configuration_rejects_before_import_persistence(api):

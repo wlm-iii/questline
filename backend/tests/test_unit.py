@@ -7,8 +7,7 @@ from questline.api.dependencies import session_for_request
 from questline.config import Settings
 from questline.main import create_app
 from questline.operations import OperationsRequest
-from questline.providers.fake import FakePlanner
-from questline.schemas import GenerationCreate, PlanEdge, PlanGraph, PlanNode, TripCreate
+from questline.schemas import PlanEdge, PlanGraph, PlanNode, TripCreate
 
 
 @pytest.fixture
@@ -124,17 +123,6 @@ def test_graph_integrity():
         )
     with pytest.raises(ValidationError, match="anchor"):
         PlanGraph(nodes=[PlanNode(id="side", title="Side", quest="side", anchor="missing")])
-
-
-async def test_fake_planner_is_deterministic_and_explicit():
-    planner = FakePlanner()
-    snapshot = {"messages": [], "places": [], "votes": [], "members": [], "timezone": "UTC"}
-    request = GenerationCreate(budget_preset="shoestring")
-    first = await planner.generate(snapshot, request)
-    assert first == await planner.generate(snapshot, request)
-    assert first.budget_preset == "shoestring"
-    assert not first.graph.nodes
-    assert "Mock output" in first.warnings[0]
 
 
 def test_operation_contract_excludes_derived_fields():
