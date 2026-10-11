@@ -36,6 +36,7 @@ async def test_claiming_a_name_first_reuses_the_web_member(api):
             (organizer, "Max", HANDLE)
         ]
         assert saved["messages"][0]["member_id"] == organizer
+        assert saved["places"][0]["mentioned_by_name"] == "Max"
     finally:
         await relay.aclose()
 
@@ -73,6 +74,8 @@ async def test_claiming_later_merges_chat_activity_into_the_web_member(api):
         assert votes == {(mcway, "in"), (bakery, "ok")}  # Newest vote wins on McWay.
         assert all(v["member_id"] == organizer for v in after["votes"])
         assert {p["mentioned_by"] for p in after["places"]} == {organizer}
+        # Places credit the person by name, never by their phone number or email.
+        assert {p["mentioned_by_name"] for p in after["places"]} == {"Max"}
         # Later chat activity keeps landing on the same member.
         await relay.post_batch(tid, [message("m3", "McWay Falls again", 2)])
         assert len((await state(client, tid))["members"]) == 1

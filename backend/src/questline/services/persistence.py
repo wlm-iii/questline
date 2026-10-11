@@ -81,13 +81,25 @@ async def claim_handle(session: AsyncSession, trip_id: UUID, handle: str, name: 
         else:
             current.name = name
         await session.flush()
+        await _refresh_mention_names(session, trip_id, current)
         return current
     target = matches[0]
     if current is not None:
         await merge_member(session, trip_id, current, target)
     target.imessage_handle = handle
     await session.flush()
+    await _refresh_mention_names(session, trip_id, target)
     return target
+
+
+async def _refresh_mention_names(session: AsyncSession, trip_id: UUID, member: Member) -> None:
+    """Places show who mentioned them by name; keep that in step with the member's name."""
+    await session.execute(
+        update(Place)
+        .where(Place.trip_id == trip_id, Place.mentioned_by == member.id)
+        .values(mentioned_by_name=member.name)
+        .execution_options(synchronize_session=False)
+    )
 
 
 async def merge_member(session: AsyncSession, trip_id: UUID, source: Member, target: Member):
