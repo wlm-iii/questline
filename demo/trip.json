@@ -17,7 +17,10 @@
     {"member": "Jordan", "place": "McWay Falls", "kind": "ok"},
     {"member": "Maya", "place": "Big Sur Bakery", "kind": "in"},
     {"member": "Jordan", "place": "Big Sur Bakery", "kind": "in"},
-    {"member": "Sam", "place": "Big Sur Bakery", "kind": "ok"}
+    {"member": "Sam", "place": "Big Sur Bakery", "kind": "ok"},
+    {"member": "Maya", "place": "Nepenthe", "kind": "in"},
+    {"member": "Jordan", "place": "Nepenthe", "kind": "in"},
+    {"member": "Sam", "place": "Nepenthe", "kind": "ok"}
   ],
   "build": {"budget_preset": "comfortable"}
 }
