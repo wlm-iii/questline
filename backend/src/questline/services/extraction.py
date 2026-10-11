@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from questline.config import Settings
-from questline.models import Import, Message, Place, Trip
+from questline.models import Import, Member, Message, Place, Trip
 from questline.providers.extractor import Extractor, FakeExtractor
 from questline.providers.maps import FakeMaps, MapsProvider, SearchBounds
 from questline.providers.selection import extractor_for_settings, maps_for_settings
@@ -50,6 +50,10 @@ async def extract_places(
             if trip.origin and trip.destination
             else None
         )
+        # The trip's own start and end are endpoints on the map, never waypoints.
+        endpoint_ids = {
+            endpoint["google_place_id"] for endpoint in (trip.origin, trip.destination) if endpoint
+        }
         trip.revision += 1
         await session.commit()
     try:
@@ -88,8 +92,12 @@ async def extract_places(
                     if entry not in unresolved:
                         unresolved.append(entry)
                     continue
+                if result.google_place_id in endpoint_ids:
+                    continue
                 first = await session.get(Message, mention.message_ids[0])
                 assert first is not None
+                # iMessage authors are handles (phone numbers, emails); show the member's name.
+                author = await session.get(Member, first.member_id) if first.member_id else None
                 await upsert_place(
                     session,
                     trip.id,
@@ -97,7 +105,7 @@ async def extract_places(
                     source="group",
                     message_ids=mention.message_ids,
                     member_id=first.member_id,
-                    author_name=first.author_id,
+                    author_name=author.name if author else first.author_id,
                 )
             # Replies are evidence, never guessed votes. Parents may arrive in later imports.
             all_messages = (

@@ -27,6 +27,12 @@ async def test_google_create_add_and_failure_contracts(api, monkeypatch):
             return httpx.Response(200, json={})
         if query == "Failure":
             return httpx.Response(403, text="private-test-key")
+        if query == "Mystery Cafe":
+            # Google's top match is hundreds of kilometres from the trip.
+            far = {**PLACE, "id": "far", "location": {"latitude": 33.64, "longitude": -117.87}}
+            return httpx.Response(200, json={"places": [far]})
+        if query == "Bakery":
+            assert "locationBias" in json.loads(request.content)
         place = {**PLACE, "id": query, "displayName": {"text": query}}
         return httpx.Response(200, json={"places": [place]})
 
@@ -50,6 +56,9 @@ async def test_google_create_add_and_failure_contracts(api, monkeypatch):
     missing = await client.post(url, json={"query": "Unknown"})
     assert missing.status_code == 404
     assert missing.json()["error"]["code"] == "place_not_found"
+    far = await client.post(url, json={"query": "Mystery Cafe"})
+    assert far.status_code == 404
+    assert "near this trip" in far.json()["error"]["message"]
     failure = await client.post(url, json={"query": "Failure"})
     assert failure.status_code == 503
     assert failure.json()["error"]["code"] == "provider_unavailable"
@@ -57,7 +66,15 @@ async def test_google_create_add_and_failure_contracts(api, monkeypatch):
     state = (await client.get(f"/api/v1/trips/{trip['id']}")).json()
     assert len(state["places"]) == 1
     assert state["revision"] == 3
-    assert calls == [TRIP["origin"], TRIP["destination"], "Bakery", "Bakery", "Unknown", "Failure"]
+    assert calls == [
+        TRIP["origin"],
+        TRIP["destination"],
+        "Bakery",
+        "Bakery",
+        "Unknown",
+        "Mystery Cafe",
+        "Failure",
+    ]
 
 
 async def test_google_unresolved_endpoint_does_not_create_trip(api, monkeypatch):

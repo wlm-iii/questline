@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { isApiError, newIdempotencyKey, type MemberApi, type Uuid } from '../api'
+import { isApiError, newIdempotencyKey, type MemberApi, type PlanOperation, type Uuid, type VoteKind } from '../api'
 import { useTrip } from '../state'
 import { DialogHost } from '../components/dialogs/DialogHost'
 import { Notice } from '../components/Notice'
@@ -11,7 +11,7 @@ import { useAddPlace } from './useAddPlace'
 import { useDeviceOrder } from './useDeviceOrder'
 import { PlaceDetails } from './ui/PlaceDetails'
 import { QuestLogPanel } from './ui/QuestLogPanel'
-import { QuestlinePanel, type BuildMessage } from './ui/QuestlinePanel'
+import { QuestlinePanel, type BuildMessage, type ResolveState } from './ui/QuestlinePanel'
 import { TripBoard, type BoardTab } from './ui/TripBoard'
 import { TripMapPanel } from './ui/TripMapPanel'
 import { TripPlaceCard } from './ui/TripPlaceCard'
@@ -39,10 +39,13 @@ export function TripWorkspace() {
   const [acceptMessage, setAcceptMessage] = useState<string | null>(null)
   const [pending, setPending] = useState<string[]>([])
   const [logMessage, setLogMessage] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [editMessage, setEditMessage] = useState<string | null>(null)
+  const [resolving, setResolving] = useState<ResolveState | null>(null)
 
   const view = useMemo(
-    () => (snapshot ? workspaceView(snapshot, device, trackedGeneration) : null),
-    [snapshot, device, trackedGeneration],
+    () => (snapshot ? workspaceView(snapshot, device, trackedGeneration, session.memberId) : null),
+    [snapshot, device, trackedGeneration, session.memberId],
   )
 
   if (!view) {
@@ -134,6 +137,41 @@ export function TripWorkspace() {
     }
   }
 
+  const vote = (stop: StopView, kind: VoteKind) => void write(`vote:${stop.id}`, api => api.vote(stop.id, kind))
+  const voting = pending.flatMap(key => (key.startsWith('vote:') ? [key.slice(5)] : []))
+
+  async function edit(operations: PlanOperation[]) {
+    if (!plan) return false
+    setEditing(true)
+    setEditMessage(null)
+    try {
+      await mutate(api => api.editPlan(plan.id, plan.revision, operations))
+      setResolving(null)
+      return true
+    } catch (failure) {
+      setEditMessage(isConflict(failure) ? 'Someone else just changed the questline. Check it and try again.' : errorMessage(failure))
+      return false
+    } finally {
+      setEditing(false)
+    }
+  }
+
+  async function resolve(stop: StopView) {
+    if (!plan) return
+    setResolving({ stopId: stop.id, options: null, error: null })
+    try {
+      const { options } = await mutate(api => api.resolve(plan.id, stop.id))
+      setResolving({ stopId: stop.id, options, error: null })
+    } catch (failure) {
+      setResolving({ stopId: stop.id, options: null, error: errorMessage(failure) })
+    }
+  }
+
+  const assignOwner = (stop: StopView, memberId: string | null) =>
+    void write(`owner:${stop.id}`, api =>
+      plan ? api.editPlan(plan.id, plan.revision, [{ op: 'assign_owner', node_id: stop.id, member_id: memberId }]) : Promise.resolve(),
+    )
+
   const createTask = (placeId: string, text: string, ownerId: string | null) =>
     write(`new-task:${placeId}`, api =>
       api.createTask(tripId, { place_id: placeId, text: text.trim(), ...(ownerId ? { owner_member_id: ownerId } : {}) }),
@@ -148,13 +186,16 @@ export function TripWorkspace() {
       <div className="planner">
         <TripMapPanel
           points={view.map}
+          routes={view.routes}
           selectedId={selectedId}
           mapEnabled={googleMapsEnabled}
           hasPlaces={view.stops.length > 0}
           onSelect={select}
           onImport={() => setImportOpen(true)}
         >
-          {selected && <TripPlaceCard stop={selected} onView={() => setDetailsOpen(true)} />}
+          {selected && (
+            <TripPlaceCard stop={selected} voting={voting.includes(selected.id)} onVote={vote} onView={() => setDetailsOpen(true)} />
+          )}
         </TripMapPanel>
         <TripBoard tab={tab} onTabChange={setTab}>
           {tab === 'Waypoints' && (
@@ -169,6 +210,8 @@ export function TripWorkspace() {
               onAddPlace={addPlace}
               onSelect={select}
               onImport={() => setImportOpen(true)}
+              voting={voting}
+              onVote={vote}
             />
           )}
           {tab === 'Questline' && (
@@ -191,6 +234,12 @@ export function TripWorkspace() {
               onMove={(id, offset) => setDevice(moveInDraft(view.questline.draft, id, offset))}
               onToggleSide={id => setDevice(toggleDraftSide(view.questline.draft, id))}
               onResetOrder={() => setDevice(null)}
+              editing={editing}
+              editMessage={editMessage}
+              onEdit={operations => void edit(operations)}
+              resolving={resolving}
+              onResolve={stop => void resolve(stop)}
+              onCloseResolve={() => setResolving(null)}
             />
           )}
           {tab === 'Quest log' && (
@@ -206,6 +255,7 @@ export function TripWorkspace() {
               onToggleTask={toggleTask}
               onUnassign={unassign}
               onToggleDone={toggleDone}
+              onAssignOwner={assignOwner}
             />
           )}
         </TripBoard>

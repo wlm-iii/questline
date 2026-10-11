@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react'
+import type { VoteKind } from '../../api'
 import { categories, categoryLabels, type ImportView, type StopView, type UnresolvedMention } from '../adapters'
 import { ImportStatus } from './ImportStatus'
 import { StatusBadge } from './StatusBadge'
 import { TripStopRow } from './TripStopRow'
+import { VoteButtons } from './VoteButtons'
 
 export type WaypointsPanelProps = {
   stops: StopView[]
@@ -17,6 +19,9 @@ export type WaypointsPanelProps = {
   onAddPlace: (query: string) => Promise<boolean>
   onSelect: (id: string) => void
   onImport: () => void
+  /** Place IDs whose vote is being saved. */
+  voting: string[]
+  onVote: (stop: StopView, kind: VoteKind) => void
 }
 
 const filterIcons: Record<string, string> = { eat: '☕ ', do: '✳ ' }
@@ -32,6 +37,8 @@ export function WaypointsPanel({
   onAddPlace,
   onSelect,
   onImport,
+  voting,
+  onVote,
 }: WaypointsPanelProps) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<string>('all')
@@ -101,7 +108,9 @@ export function WaypointsPanel({
                 ]}
                 badge={<StatusBadge status={stop.status} />}
                 onSelect={onSelect}
-              />
+              >
+                <VoteButtons stop={stop} pending={voting.includes(stop.id)} onVote={onVote} className="vote-row px-[10px] pb-3" />
+              </TripStopRow>
             ))}
           </section>
         ))}
@@ -109,7 +118,7 @@ export function WaypointsPanel({
       <div className="board-bottom">
         <div className="tip">
           <p>
-            Places are candidates until the crew builds a questline.
+            Vote I'm in, Sure or Skip. Building the questline puts I'm-in picks on the main quest.
             <br />
             <strong>Every place shows who mentioned it.</strong>
           </p>

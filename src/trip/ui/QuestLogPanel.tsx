@@ -17,6 +17,8 @@ export type QuestLogPanelProps = {
   onToggleTask: (task: TaskView) => void
   onUnassign: (task: TaskView) => void
   onToggleDone: (stop: StopView) => void
+  /** Plan stops only: set or clear the quest's owner for the whole crew. */
+  onAssignOwner: (stop: StopView, memberId: string | null) => void
 }
 
 export function QuestLogPanel({
@@ -31,6 +33,7 @@ export function QuestLogPanel({
   onToggleTask,
   onUnassign,
   onToggleDone,
+  onAssignOwner,
 }: QuestLogPanelProps) {
   const [draft, setDraft] = useState({ text: '', ownerId: '' })
   const { progress } = log
@@ -87,7 +90,26 @@ export function QuestLogPanel({
               badge={<StatusBadge status={stop.status} />}
               onSelect={onSelect}
             >
-              <p className="owner-label">Owner: {owner}</p>
+              {stop.status === 'candidate' ? (
+                <p className="owner-label">Owner: {owner}</p>
+              ) : (
+                <div className="row-actions">
+                  <select
+                    aria-label={`Owner of ${stop.name}`}
+                    style={{ flex: 1, fontSize: 10 }}
+                    value={stop.ownerId ?? ''}
+                    disabled={pending.includes(`owner:${stop.id}`)}
+                    onChange={e => onAssignOwner(stop, e.target.value || null)}
+                  >
+                    <option value="">Quest owner: {owner}</option>
+                    {members.map(member => (
+                      <option key={member.id} value={member.id}>
+                        Quest owner: {member.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {tasks.map(task => (
                 <div className="complete" key={task.id}>
                   <label>

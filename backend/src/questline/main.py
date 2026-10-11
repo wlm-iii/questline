@@ -1,6 +1,8 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager, suppress
 
+import procrastinate
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +24,22 @@ from questline.db import create_database
 from questline.jobs import create_queue
 from questline.providers.errors import ProviderUnavailable
 
+logger = logging.getLogger(__name__)
+
+
+async def supervise_worker(queue: procrastinate.App, restart_delay: float = 5) -> None:
+    """Keep the in-process worker alive. A crashed worker would otherwise leave the API serving
+    requests while builds and imports sit in the queue forever."""
+    while True:
+        try:
+            await queue.run_worker_async(queues=["plans"], concurrency=2)
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("In-process worker crashed; restarting in %s s", restart_delay)
+            await asyncio.sleep(restart_delay)
+
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
@@ -33,9 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             if settings.run_worker_in_process:
                 async with queue.open_async():
-                    worker = asyncio.create_task(
-                        queue.run_worker_async(queues=["plans"], concurrency=2)
-                    )
+                    worker = asyncio.create_task(supervise_worker(queue))
                     try:
                         yield
                     finally:

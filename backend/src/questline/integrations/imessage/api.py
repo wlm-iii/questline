@@ -80,16 +80,30 @@ class PlanSummary(_Incoming):
     main_quests: int
     estimate: tuple[float, float] | None
     estimate_is_partial: bool
+    side_quests: int = 0
+    # Code-generated facts versus the previous plan; empty for the first plan.
+    changes: list[str] = []
+    # Titles of stops with both I'm in and Skip votes.
+    contested: list[str] = []
 
     @classmethod
     def from_content(cls, content: dict[str, Any]) -> "PlanSummary":
         nodes = content.get("graph", {}).get("nodes", [])
-        main_stops = [n for n in nodes if n.get("role") == "stop" and n.get("quest") == "main"]
+        stops = [n for n in nodes if n.get("role") == "stop"]
+        main_stops = [n for n in stops if n.get("quest") == "main"]
+        titles = {n.get("id"): n.get("title", "") for n in stops}
         estimate = content.get("per_person_estimate")
         return cls(
             main_quests=len(main_stops),
+            side_quests=len(stops) - len(main_stops),
             estimate=tuple(estimate) if estimate else None,
             estimate_is_partial=bool(content.get("estimate_is_partial")),
+            changes=list(content.get("changed_from_previous") or []),
+            contested=[
+                titles[c["node_id"]]
+                for c in content.get("conflicts") or []
+                if c.get("kind") == "split_vote" and titles.get(c.get("node_id"))
+            ],
         )
 
 

@@ -9,6 +9,8 @@ import type {
   MessageInput,
   Place,
   Plan,
+  PlanOperation,
+  ResolutionOption,
   Task,
   TaskCreate,
   TaskUpdate,
@@ -56,6 +58,10 @@ export type MemberApi = {
   getPlan(planId: Uuid, call?: Call): Promise<{ plan: Plan }>
   /** `revision` is the plan's revision. A stale one fails with 409. */
   acceptPlan(planId: Uuid, revision: number, call?: Call): Promise<{ plan: Plan }>
+  /** Apply edits at the plan's `revision`; a stale revision fails with 409. Returns the recomputed plan. */
+  editPlan(planId: Uuid, revision: number, operations: PlanOperation[], call?: Call): Promise<{ plan: Plan }>
+  /** Up to three options for a contested stop. Apply one with `editPlan`. */
+  resolve(planId: Uuid, nodeId: string, call?: Call): Promise<{ options: ResolutionOption[] }>
 }
 
 export function createMemberApi(memberToken: string): MemberApi {
@@ -106,6 +112,12 @@ export function createMemberApi(memberToken: string): MemberApi {
     },
     acceptPlan(planId, revision, { signal } = {}) {
       return request(`/plans/${seg(planId)}/accept`, { ...auth, method: 'POST', body: { revision }, signal })
+    },
+    editPlan(planId, revision, operations, { signal } = {}) {
+      return request(`/plans/${seg(planId)}/operations`, { ...auth, method: 'POST', body: { revision, operations }, signal })
+    },
+    resolve(planId, nodeId, { signal } = {}) {
+      return request(`/plans/${seg(planId)}/resolutions`, { ...auth, method: 'POST', body: { node_id: nodeId }, signal })
     },
   }
 }

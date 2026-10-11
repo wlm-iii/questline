@@ -1,3 +1,4 @@
+import type { PlanOperation, ResolutionOption } from '../../api'
 import { QuestBadge } from '../../components/QuestBadge'
 import {
   NO_STOPS_NOTE,
@@ -7,12 +8,16 @@ import {
   type Estimate,
   type Preset,
   type QuestlineView,
+  type StopView,
 } from '../adapters'
 import { StatusBadge } from './StatusBadge'
 import { TripBudget } from './TripBudget'
 import { TripStopRow } from './TripStopRow'
 
 export type BuildMessage = { text: string; canRetry: boolean }
+
+/** Resolve options for one contested stop; `options` is null while loading. */
+export type ResolveState = { stopId: string; options: ResolutionOption[] | null; error: string | null }
 
 export type QuestlinePanelProps = {
   questline: QuestlineView
@@ -34,6 +39,13 @@ export type QuestlinePanelProps = {
   onMove: (id: string, offset: number) => void
   onToggleSide: (id: string) => void
   onResetOrder: () => void
+  /** A shared plan edit is in flight. */
+  editing: boolean
+  editMessage: string | null
+  onEdit: (operations: PlanOperation[]) => void
+  resolving: ResolveState | null
+  onResolve: (stop: StopView) => void
+  onCloseResolve: () => void
 }
 
 export function QuestlinePanel({
@@ -55,11 +67,70 @@ export function QuestlinePanel({
   onMove,
   onToggleSide,
   onResetOrder,
+  editing,
+  editMessage,
+  onEdit,
+  resolving,
+  onResolve,
+  onCloseResolve,
 }: QuestlinePanelProps) {
   const { plan, job } = build
   const fromPlan = questline.source === 'plan'
   const rows = questline.rows
   const busy = requesting || build.building
+  const mainIds = rows.filter(row => !row.side).map(row => row.stop.id)
+
+  function planActions(stop: StopView, side: boolean) {
+    const at = mainIds.indexOf(stop.id)
+    return (
+      <div className="row-actions">
+        {!side && (
+          <>
+            <button disabled={editing || at <= 0} aria-label={`Move ${stop.name} earlier`} onClick={() => onEdit([{ op: 'move', node_id: stop.id, after: at >= 2 ? mainIds[at - 2] : 'start' }])}>
+              ↑ Earlier
+            </button>
+            <button disabled={editing || at === mainIds.length - 1} aria-label={`Move ${stop.name} later`} onClick={() => onEdit([{ op: 'move', node_id: stop.id, after: mainIds[at + 1] }])}>
+              ↓ Later
+            </button>
+          </>
+        )}
+        <button disabled={editing} onClick={() => onEdit([{ op: 'set_quest', node_id: stop.id, quest: side ? 'main' : 'side' }])}>
+          Make {side ? 'main' : 'side'} quest
+        </button>
+        <button disabled={editing} onClick={() => onEdit([{ op: 'drop', node_id: stop.id }])}>
+          Drop
+        </button>
+        {(stop.contested || stop.conflicts.length > 0) && (
+          <button disabled={editing} onClick={() => onResolve(stop)}>
+            ⚠ Resolve
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  function resolvePanel(stop: StopView) {
+    if (resolving?.stopId !== stop.id) return null
+    return (
+      <div className="inline-warning" role="region" aria-label={`Resolve ${stop.name}`} style={{ margin: '0 10px 12px' }}>
+        <strong>Resolve {stop.name}</strong>
+        {resolving.error && <div role="alert">{resolving.error}</div>}
+        {!resolving.options && !resolving.error && <div role="status">Finding options…</div>}
+        {resolving.options?.length === 0 && <div>No options apply to the current plan.</div>}
+        {resolving.options?.map(option => (
+          <div key={option.label} style={{ marginTop: 10 }}>
+            <button className="text-button" disabled={editing} onClick={() => onEdit(option.operations)}>
+              {option.label} →
+            </button>
+            <div>{option.rationale}</div>
+          </div>
+        ))}
+        <button className="text-button" style={{ marginTop: 10 }} onClick={onCloseResolve}>
+          Close
+        </button>
+      </div>
+    )
+  }
   return (
     <>
       <div className="intro">
@@ -117,6 +188,12 @@ export function QuestlinePanel({
         </div>
       )}
       {plan && !plan.hasStops && <div className="inline-warning">{NO_STOPS_NOTE}</div>}
+      {editing && <div className="route-summary" role="status">Updating the questline for everyone…</div>}
+      {editMessage && (
+        <div className="inline-warning" role="alert">
+          {editMessage}
+        </div>
+      )}
       <div className="stop-list">
         {rows.length === 0 && (
           <div className="empty-list">
@@ -134,15 +211,18 @@ export function QuestlinePanel({
             details={
               fromPlan
                 ? [
-                    [stop.arrive, stop.categoryLabel, stop.cost].filter(Boolean).join(' · '),
+                    [stop.arrive && `Arrive ${stop.arrive}`, stop.categoryLabel, stop.cost].filter(Boolean).join(' · '),
                     ...(stop.detour ? [stop.detour] : []),
                     ...(stop.why ? [stop.why] : []),
+                    ...stop.conflicts.map(conflict => `⚠ ${conflict}`),
                   ]
                 : [`${stop.categoryLabel} · ${stop.cost}`]
             }
             badge={fromPlan ? <StatusBadge status={stop.status} /> : <QuestBadge kind={side ? 'side' : 'main'}>{side ? 'Side (draft)' : 'Main (draft)'}</QuestBadge>}
             onSelect={onSelect}
           >
+            {fromPlan && planActions(stop, side)}
+            {fromPlan && resolvePanel(stop)}
             {!fromPlan && (
               <div className="row-actions">
                 <button disabled={index === 0} aria-label={`Move ${stop.name} earlier`} onClick={() => onMove(stop.id, -1)}>
@@ -170,7 +250,16 @@ export function QuestlinePanel({
                 selected={selectedId === stop.id}
                 details={[`${stop.categoryLabel} · ${stop.cost}`]}
                 onSelect={onSelect}
-              />
+              >
+                <div className="row-actions">
+                  <button disabled={editing} onClick={() => onEdit([{ op: 'add', place_id: stop.id, quest: 'main' }])}>
+                    Add to main quest
+                  </button>
+                  <button disabled={editing} onClick={() => onEdit([{ op: 'add', place_id: stop.id, quest: 'side' }])}>
+                    Add as side quest
+                  </button>
+                </div>
+              </TripStopRow>
             ))}
           </section>
         )}

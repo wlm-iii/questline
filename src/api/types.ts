@@ -263,6 +263,23 @@ export type Plan = {
   content: PlanContent
 }
 
+/** Decision-only plan edits. The server recomputes routes, times, detours and estimates. */
+export type PlanOperation =
+  | { op: 'set_quest'; node_id: string; quest: 'main' | 'side' }
+  | { op: 'move'; node_id: string; after: string }
+  | { op: 'set_anchor'; node_id: string; anchor: string }
+  | { op: 'drop'; node_id: string }
+  | { op: 'add'; place_id: Uuid; quest: 'main' | 'side'; after?: string | null; anchor?: string | null }
+  | { op: 'assign_owner'; node_id: string; member_id: Uuid | null }
+  | { op: 'set_note'; node_id: string; notes: string }
+
+/** One way to settle a contested stop, grounded in the actual votes. */
+export type ResolutionOption = {
+  label: string
+  rationale: string
+  operations: PlanOperation[]
+}
+
 export type TripSnapshot = {
   trip: Trip
   members: Member[]

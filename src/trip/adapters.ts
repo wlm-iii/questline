@@ -16,7 +16,9 @@ import type {
   Trip,
   TripSnapshot,
   Uuid,
+  VoteKind,
 } from '../api'
+import type { MapRoute } from '../features/map/QuestMap'
 
 export const PRICE_UNKNOWN = 'Price unknown'
 export const ANYONE = 'Anyone in the crew'
@@ -175,9 +177,22 @@ export type StopView = {
   arrive: string | null
   hours: string
   ownerName: string | null
+  /** The quest's owner in the current plan. */
+  ownerId: Uuid | null
   /** Shared "Quest complete" check-off. */
   done: boolean
+  /** Who voted what, by name. */
+  votes: Record<VoteKind, string[]>
+  /** This browser member's own vote. */
+  myVote: VoteKind | null
+  /** At least one I'm in and one Skip. */
+  contested: boolean
+  /** Planner conflicts on this stop, e.g. "Maya voted I'm in; Sam voted Skip." */
+  conflicts: string[]
 }
+
+export const voteLabels: Record<VoteKind, string> = { in: "I'm in", ok: 'Sure', out: 'Skip' }
+export const voteKinds = Object.keys(voteLabels) as VoteKind[]
 
 type PlanStops = { main: PlanNode[]; side: PlanNode[] }
 
@@ -201,7 +216,16 @@ function memberName(members: Member[], id: Uuid | null): string | null {
   return (id && members.find(member => member.id === id)?.name) || null
 }
 
-function stopView(snapshot: TripSnapshot, place: Place, node: PlanNode | undefined, number: number | null): StopView {
+function stopVotes(snapshot: TripSnapshot, placeId: Uuid): Record<VoteKind, string[]> {
+  const votes: Record<VoteKind, string[]> = { in: [], ok: [], out: [] }
+  for (const vote of snapshot.votes) {
+    if (vote.place_id === placeId) votes[vote.kind].push(memberName(snapshot.members, vote.member_id) ?? 'Someone')
+  }
+  return votes
+}
+
+function stopView(snapshot: TripSnapshot, place: Place, node: PlanNode | undefined, number: number | null, memberId: Uuid | null): StopView {
+  const votes = stopVotes(snapshot, place.id)
   const [low, high] = node?.est_cost ?? [place.est_cost_low, place.est_cost_high]
   const side = node?.quest === 'side'
   return {
@@ -226,12 +250,17 @@ function stopView(snapshot: TripSnapshot, place: Place, node: PlanNode | undefin
     arrive: node ? timeOf(node.arrive, snapshot.trip.timezone) : null,
     hours: node?.hours_status === 'verified' ? 'Hours fit the schedule' : 'Hours unverified',
     ownerName: memberName(snapshot.members, node?.owner_member_id ?? null),
+    ownerId: node?.owner_member_id ?? null,
     done: snapshot.checkins.some(checkin => checkin.place_id === place.id),
+    votes,
+    myVote: snapshot.votes.find(vote => vote.place_id === place.id && vote.member_id === memberId)?.kind ?? null,
+    contested: votes.in.length > 0 && votes.out.length > 0,
+    conflicts: node ? (snapshot.current_plan?.content.conflicts ?? []).filter(c => c.node_id === place.id).map(c => c.detail) : [],
   }
 }
 
 /** Every place with its shared status. Nodes that don't match a place are left out rather than invented. */
-export function stopViews(snapshot: TripSnapshot): StopView[] {
+export function stopViews(snapshot: TripSnapshot, memberId: Uuid | null = null): StopView[] {
   const plan = planStops(snapshot.current_plan)
   const nodes = new Map([...(plan?.main ?? []), ...(plan?.side ?? [])].map(node => [node.id, node]))
   const placeIds = new Set(snapshot.places.map(place => place.id))
@@ -239,7 +268,7 @@ export function stopViews(snapshot: TripSnapshot): StopView[] {
   return snapshot.places.map(place => {
     const node = nodes.get(place.id)
     const position = mainOrder.indexOf(place.id)
-    return stopView(snapshot, place, node, node && position >= 0 ? position + 1 : null)
+    return stopView(snapshot, place, node, node && position >= 0 ? position + 1 : null, memberId)
   })
 }
 
@@ -432,6 +461,48 @@ export function mapPoints(trip: Trip, stops: StopView[]): MapPoint[] {
   ]
 }
 
+export type { MapRoute }
+
+/** Google's encoded polyline format. */
+export function decodePolyline(encoded: string): { lat: number; lng: number }[] {
+  const points: { lat: number; lng: number }[] = []
+  let index = 0
+  let lat = 0
+  let lng = 0
+  while (index < encoded.length) {
+    for (const axis of [0, 1]) {
+      let result = 0
+      let shift = 0
+      let byte: number
+      do {
+        byte = encoded.charCodeAt(index++) - 63
+        result |= (byte & 0x1f) << shift
+        shift += 5
+      } while (byte >= 0x20 && index < encoded.length)
+      const delta = result & 1 ? ~(result >> 1) : result >> 1
+      if (axis === 0) lat += delta
+      else lng += delta
+    }
+    points.push({ lat: lat / 1e5, lng: lng / 1e5 })
+  }
+  return points
+}
+
+/** Plan legs: routed polylines when available, else straight segments. Detours are always straight. */
+export function mapRoutes(plan: Plan | null): MapRoute[] {
+  if (!plan?.content?.graph) return []
+  const nodes = new Map(plan.content.graph.nodes.map(node => [node.id, node]))
+  return plan.content.graph.edges.flatMap(edge => {
+    if (edge.kind !== 'travel' && edge.kind !== 'detour') return []
+    const from = nodes.get(edge.source)
+    const to = nodes.get(edge.target)
+    if (from?.lat == null || from.lng == null || to?.lat == null || to.lng == null) return []
+    const straight = [{ lat: from.lat, lng: from.lng }, { lat: to.lat, lng: to.lng }]
+    const path = edge.kind === 'travel' && edge.polyline ? decodePolyline(edge.polyline) : straight
+    return [{ id: edge.id, kind: edge.kind, path }]
+  })
+}
+
 // ---------------------------------------------------------------- quest log
 
 export type MemberOption = { id: Uuid; name: string }
@@ -561,6 +632,7 @@ export type WorkspaceView = {
   questLog: QuestLogView
   build: BuildView
   map: MapPoint[]
+  routes: MapRoute[]
   members: MemberOption[]
   imports: ImportView[]
   unresolved: UnresolvedMention[]
@@ -568,8 +640,13 @@ export type WorkspaceView = {
   defaultPreset: BudgetPreset
 }
 
-export function workspaceView(snapshot: TripSnapshot, device: DeviceOrder | null, trackedGenerationId: Uuid | null = null): WorkspaceView {
-  const stops = stopViews(snapshot)
+export function workspaceView(
+  snapshot: TripSnapshot,
+  device: DeviceOrder | null,
+  trackedGenerationId: Uuid | null = null,
+  memberId: Uuid | null = null,
+): WorkspaceView {
+  const stops = stopViews(snapshot, memberId)
   const questline = questlineView(snapshot, stops, device)
   return {
     stops,
@@ -577,6 +654,7 @@ export function workspaceView(snapshot: TripSnapshot, device: DeviceOrder | null
     questLog: questLogView(snapshot, questline),
     build: buildView(snapshot, trackedGenerationId),
     map: mapPoints(snapshot.trip, stops),
+    routes: mapRoutes(snapshot.current_plan),
     members: snapshot.members.map(member => ({ id: member.id, name: member.name })),
     imports: importsToShow(snapshot.imports),
     unresolved: unresolvedMentions(snapshot),

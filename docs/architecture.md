@@ -62,7 +62,8 @@ Errors use `{error: {code, message}}`; conflict errors may also include `generat
 - All implemented state-changing writes lock the trip and bump its revision, including job status,
   accepted plans, and edits. Identical message redelivery does not bump revision.
 - Trip-state reads hold a shared trip lock so the revision and returned state are consistent.
-- Full-content replacement is not a browser editor API. `/operations` and recomputation are pending.
+- Full-content replacement is not a browser editor API. Browsers use `/operations`, which recomputes
+  derived fields before taking the trip lock and rechecks the revision under it.
 
 ### Jobs
 
@@ -75,12 +76,18 @@ Errors use `{error: {code, message}}`; conflict errors may also include `generat
 - Successful output is a **draft** plan, saved atomically with `current_plan_id` and the preset.
 - Failure leaves the previous successful plan/preset unchanged. Errors are sanitized.
 - Completed task replay does not overwrite edited plans. Each new generation creates a new plan.
-- Stalled-job recovery/timeouts and a partial unique active-job index remain Harden work.
+- A periodic task (every minute) requeues jobs whose worker missed heartbeats for 30 seconds, so a
+  killed or restarted worker doesn't strand a trip's queue lock. A build still queued or running
+  after 5 minutes is failed when a new one is requested, and failed builds never save a plan.
+  The in-process worker restarts itself after a crash. A partial unique active-job index remains
+  Harden work.
 
 ## Provider and graph boundaries
 
 `Planner.generate(snapshot, request)` receives the complete immutable request snapshot.
-The fake planner intentionally returns an empty, clearly labeled draft, not invented resolved places.
+It also carries the plan that was current at request time (`previous_plan`) so changes can be
+reported. The fake planner is the same code-owned builder with vote-based picks and straight-line
+drive estimates; it never invents places, prices, or hours.
 `FakeMaps` resolves endpoints `San Jose, CA` / `Big Sur, CA` and waypoint fixtures `McWay Falls` /
 `Big Sur Bakery`. `FakeExtractor` recognizes those waypoint names plus unresolved `Mystery Cafe`.
 These are explicitly labeled development fixtures, not Google-verified results.
@@ -97,8 +104,10 @@ Unresolved mentions remain visible; the matcher is conservative, not a guarantee
 Gemini extraction uses `google-genai` structured output, constrained message IDs, exact source
 substrings, a 30-second deadline, and no automatic retries. It never infers votes. The extraction
 pipeline has a 120-second overall deadline. `PLANNER_PROVIDER=gemini` selects it, requiring a key
-and explicit model; selecting Gemini for builds still returns 503. Gemini planning and Routes
-adapters are not implemented. Credentials remain server-side. Public real-provider deployment also needs
+and explicit model. Gemini also picks main/side quests and writes reasons at build time
+(`providers/gemini_selector.py`); code owns order, routing (`providers/routes.py`, Google Routes
+`computeRoutes` or straight-line estimates), timing, detours, estimates (`pricing.py`) and
+conflicts (`services/questline_plan.py`). Credentials remain server-side. Public real-provider deployment also needs
 Google attribution and content retention/refresh/removal across places, endpoints, and snapshots.
 
 Plan schemas accept main/side roles, anchors, coordinates, travel/detour edges, polylines, days,
@@ -140,15 +149,13 @@ represent. Back up any non-disposable database before changing schemas.
 
 ## Remaining Build work
 
-- Gemini planning and Google Routes adapters (Gemini extraction, trip-biased place matching,
-  and Google endpoint/manual resolution are implemented; fake mode remains supported).
-- Planner selection contract `{main, side, why}` and code-owned routing/timing/estimate calculations.
-- `/operations` validation and recompute; grounded `/resolutions`.
-- API-driven seed script and demo chat (the smoke script tests only this foundation).
-- Frontend map, creation/join, polling, votes, editor, and quest log; styled components exist but
-  are not connected to backend data.
-- Real-Mac iMessage end-to-end verification, historical import, and optional deferred reactions.
+- Level 1–2 planning: search-along-route suggestions (`source = suggested`), opening-hours checks,
+  demote-and-retry when a day overflows, and Gemini-written resolution options (current options
+  are deterministic and vote-grounded).
+- Historical iMessage import and optional deferred reactions; the web organizer and their
+  iMessage handle still become two members.
 - Frontend deployment and deployment manifests; actual Supabase/hosting resources are not created.
+- Google attribution and content retention for real Places data before any public deployment.
 
 Divide these by the four roles in SPEC §12. Extend schemas and migrations deliberately; tests
 should use fake providers and never consume real Gemini/Maps quota.

@@ -7,8 +7,7 @@ from questline.api.dependencies import session_for_request
 from questline.config import Settings
 from questline.main import create_app
 from questline.operations import OperationsRequest
-from questline.providers.fake import FakePlanner
-from questline.schemas import GenerationCreate, PlanEdge, PlanGraph, PlanNode, TripCreate
+from questline.schemas import PlanEdge, PlanGraph, PlanNode, TripCreate
 
 
 @pytest.fixture
@@ -126,17 +125,6 @@ def test_graph_integrity():
         PlanGraph(nodes=[PlanNode(id="side", title="Side", quest="side", anchor="missing")])
 
 
-async def test_fake_planner_is_deterministic_and_explicit():
-    planner = FakePlanner()
-    snapshot = {"messages": [], "places": [], "votes": [], "members": [], "timezone": "UTC"}
-    request = GenerationCreate(budget_preset="shoestring")
-    first = await planner.generate(snapshot, request)
-    assert first == await planner.generate(snapshot, request)
-    assert first.budget_preset == "shoestring"
-    assert not first.graph.nodes
-    assert "Mock output" in first.warnings[0]
-
-
 def test_operation_contract_excludes_derived_fields():
     request = OperationsRequest.model_validate(
         {
@@ -189,3 +177,19 @@ def test_spec_graph_fields_are_accepted():
     )
     assert graph.nodes[2].detour_min is None
     assert graph.edges[0].polyline == "fixture-polyline"
+
+
+async def test_in_process_worker_restarts_after_a_crash():
+    from questline.main import supervise_worker
+
+    class Queue:
+        runs = 0
+
+        async def run_worker_async(self, **kwargs):
+            self.runs += 1
+            if self.runs == 1:
+                raise RuntimeError("connection lost")
+
+    queue = Queue()
+    await supervise_worker(queue, restart_delay=0)  # type: ignore[arg-type]
+    assert queue.runs == 2

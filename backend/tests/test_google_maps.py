@@ -48,8 +48,10 @@ async def test_google_places_request_and_resolved_fields():
     assert place.category == "eat"
     assert (place.lat, place.lng) == (36.27, -121.80)
     assert place.google_maps_uri == PLACE["googleMapsUri"]
-    assert place.price_level is None  # Not requested; no invented price estimates.
-    assert place.est_cost_low is None and place.est_cost_high is None
+    # Google's coarse price level maps to the app's disclosed range table, never a quote.
+    assert place.price_level == 2
+    assert (place.est_cost_low, place.est_cost_high) == (20, 40)
+    assert place.cost_basis and "app estimate" in place.cost_basis.lower()
     assert "test-secret" not in place.model_dump_json()
     assert len(requests) == 2
 

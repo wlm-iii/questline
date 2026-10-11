@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react'
 import { QuestMap } from '../../features/map/QuestMap'
-import type { MapPoint } from '../adapters'
+import type { MapPoint, MapRoute } from '../adapters'
 
 export type TripMapPanelProps = {
   points: MapPoint[]
+  /** Legs of the current plan; empty before a build. */
+  routes: MapRoute[]
   selectedId: string | null
   mapEnabled: boolean
   hasPlaces: boolean
@@ -13,7 +15,7 @@ export type TripMapPanelProps = {
   children?: ReactNode
 }
 
-export function TripMapPanel({ points, selectedId, mapEnabled, hasPlaces, onSelect, onImport, children }: TripMapPanelProps) {
+export function TripMapPanel({ points, routes, selectedId, mapEnabled, hasPlaces, onSelect, onImport, children }: TripMapPanelProps) {
   const hasQuests = points.some(point => point.kind === 'stop')
   const empty = (
     <>
@@ -31,9 +33,9 @@ export function TripMapPanel({ points, selectedId, mapEnabled, hasPlaces, onSele
         <span className="map-pill">
           <i /> Your next adventure, mapped.
         </span>
-        <span className="map-pill small">{mapEnabled ? 'Google Maps · no routes yet' : 'Map unavailable'}</span>
+        <span className="map-pill small">{mapEnabled ? (routes.length ? 'Google Maps · driving route' : 'Google Maps · no route yet') : 'Map unavailable'}</span>
       </div>
-      {mapEnabled && <QuestMap stops={points} selectedId={selectedId} onSelect={onSelect} />}
+      {mapEnabled && <QuestMap stops={points} routes={routes} selectedId={selectedId} onSelect={onSelect} />}
       {mapEnabled && !hasPlaces && (
         <div className="empty-map">
           <h2>No places yet.</h2>
@@ -68,7 +70,7 @@ export function TripMapPanel({ points, selectedId, mapEnabled, hasPlaces, onSele
         <span>
           <i className="candidate" /> Candidate
         </span>
-        <span>No driving routes yet</span>
+        <span>{routes.length ? 'Solid: route · dashed: detour' : 'No driving route yet'}</span>
       </div>
     </section>
   )
