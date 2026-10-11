@@ -328,8 +328,16 @@ class Relay:
             await self._reply(chat_guid, self._ready_text(plan, trip_id))
         except Conflict as exc:
             await self._reply(chat_guid, f"Can't build right now: {exc.message}")
-        except Unavailable:
-            await self._reply(chat_guid, UNREACHABLE)
+        except Unavailable as exc:
+            # The backend is up but its planner isn't configured or built yet; not an outage.
+            if exc.code == "provider_unavailable":
+                await self._reply(
+                    chat_guid,
+                    "Plan building isn't available yet. Waypoints and votes are on the map: "
+                    f"{self._trip_url(trip_id)}",
+                )
+            else:
+                await self._reply(chat_guid, UNREACHABLE)
         except ApiError as exc:
             logger.error("Build failed for trip %s: %s", trip_id, exc)
             await self._reply(chat_guid, "Build failed — try again.")
