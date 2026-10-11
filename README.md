@@ -58,6 +58,16 @@ Maps JavaScript API. Never put the backend's server key, `API_TOKEN`, or `DATABA
 Stops without coordinates are counted but not plotted. Lines between stops are straight, not road
 routes.
 
+### Styling
+
+New UI is styled with [Tailwind CSS](https://tailwindcss.com) v4. `src/styles/app.css` is the
+single stylesheet entry: it defines the design tokens (`@theme` colors, fonts, and breakpoints)
+and loads the older hand-written CSS (`src/App.css`, `src/styles/questline.css`) into a `legacy`
+cascade layer beneath Tailwind's utilities, so a utility class always wins over a legacy rule.
+To migrate a component, style it with utilities and delete its rules from `App.css`
+(`src/components/AppHeader.tsx` is the first example). Tailwind's Preflight reset is not loaded
+yet, so set things like button backgrounds explicitly.
+
 Frontend checks and production preview:
 
 ```sh
