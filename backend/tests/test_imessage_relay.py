@@ -19,7 +19,7 @@ from questline.integrations.imessage.api import (
     Unavailable,
 )
 from questline.integrations.imessage.models import ImsgMessage
-from questline.integrations.imessage.relay import Relay
+from questline.integrations.imessage.relay import UNREACHABLE, Relay
 from questline.integrations.imessage.state import RelayState
 
 CHAT = "iMessage;+;chat7"
@@ -48,6 +48,7 @@ class FakeApi:
         self.place_error: Exception | None = None
         self.generation_statuses = ["running", "succeeded"]
         self.generation_error: str | None = None
+        self.create_generation_error: Exception | None = None
         self.plan = PlanSummary(main_quests=3, estimate=(40, 85), estimate_is_partial=False)
         self.batch_posted = asyncio.Event()
 
@@ -88,6 +89,8 @@ class FakeApi:
         self, trip_id: str, preset: str | None, *, idempotency_key: str
     ) -> Generation:
         self.calls.append(("create_generation", trip_id, preset, idempotency_key))
+        if self.create_generation_error:
+            raise self.create_generation_error
         return Generation(id=uuid4(), status="queued")
 
     async def get_generation(self, generation_id: UUID) -> Generation:
@@ -416,6 +419,28 @@ async def test_build_failure_relays_the_sanitized_error(relay, api, sender):
     await relay.handle(row(1, text="@questline build"))
     await relay.wait_for_tasks()
     assert replies(sender)[-1] == "Build failed: Planner unavailable"
+
+
+async def test_build_when_the_planner_is_not_ready_says_so(relay, api, sender):
+    # Gemini mode answers 503 provider_unavailable until plan building ships; not an outage.
+    linked(api)
+    api.create_generation_error = Unavailable(
+        503, "provider_unavailable", "Gemini provider is not implemented yet"
+    )
+    await relay.handle(row(1, text="@questline build"))
+    await relay.wait_for_tasks()
+    assert replies(sender)[-1] == (
+        "Plan building isn't available yet. Waypoints and votes are on the map: "
+        "https://questline.test/t/abc123"
+    )
+
+
+async def test_build_during_an_outage_says_questline_is_unreachable(relay, api, sender):
+    linked(api)
+    api.create_generation_error = Unavailable(503, "unavailable", "down")
+    await relay.handle(row(1, text="@questline build"))
+    await relay.wait_for_tasks()
+    assert replies(sender)[-1] == UNREACHABLE
 
 
 async def test_build_that_outlasts_the_poll_window_points_to_the_map(relay, api, sender, clock):
