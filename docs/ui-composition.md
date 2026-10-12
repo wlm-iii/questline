@@ -116,3 +116,13 @@ coordinate data; neither chooses demo fixtures on its own.
   failure simulation were not exercised. No automated frontend test runner is configured.
 - The baseline's illustrated map also renders black triangles in this browser; this pre-existing
   rendering issue is preserved rather than folded into a behavior-preserving extraction.
+
+## Live trip composition
+
+`src/trip/TripApp.tsx` composes the same panels for live trips. Pure logic lives in
+`src/trip/deskAdapters.ts`; `TripOverview` and `TripPlanningDesk` (in `src/trip/ui/`) wire panels
+to `workspaceView()` data. Widened, optional props keep the demo unchanged: `TierList` and
+`RouteGraph` accept string or number IDs; `TierList` hides "Voting as" without `onVoter` and can
+show an Unranked row; `TripStats`, `TravelCosts`, `OverviewHero`, `TripEssentials`,
+`ViewNavigation`, `NavigationRail` and `PlanningDesk` take optional labels or keys.
+`TripWorkspace` stays mounted (hidden) on other views so the Google map does not reload.

@@ -7,6 +7,7 @@ export type PlanningDeskProps = {
   constraints: ReactNode
   travel: ReactNode
   location: ReactNode
+  badge?: string
 }
 export function PlanningDesk({
   conversation,
@@ -15,6 +16,7 @@ export function PlanningDesk({
   constraints,
   travel,
   location,
+  badge = 'Local planning workspace',
 }: PlanningDeskProps) {
   return (
     <section className="planning-desk">
@@ -23,7 +25,7 @@ export function PlanningDesk({
           <span className="eyebrow">THE GROUP CHAT, WITH A PLAN</span>
           <h2>Gather your party. Chart your quest.</h2>
         </div>
-        <span className="local-badge">Local planning workspace</span>
+        <span className="local-badge">{badge}</span>
       </div>
       <div className="desk-grid">
         {conversation}

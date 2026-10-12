@@ -70,6 +70,12 @@ export function CreateTripPage({ createTrip, resumableTripId }: CreateTripPagePr
         description="Start a shared trip, send the link to your party, and plan it together."
         actions={
           <div className="mt-5 flex flex-wrap items-center gap-3">
+            <ol className="m-0 w-full list-decimal pl-5 text-sm leading-6 text-bark">
+              <li>Create the trip.</li>
+              <li>Tap <strong>Link iMessage</strong> and send it in your group chat.</li>
+              <li>Places your group mentions appear on the map.</li>
+              <li>Vote or rank them, then <strong>Build</strong> the questline.</li>
+            </ol>
             {resumableTripId && (
               <a className="quiet inline-block" href={`/t/${resumableTripId}`} onClick={followInAppLink}>
                 Resume your trip

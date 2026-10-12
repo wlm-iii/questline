@@ -1,14 +1,20 @@
 export type TripStatsProps = {
   mainCount: number
-  total: number
-  budget: number
+  total?: number
+  budget?: number
   completed: number
+  /** Replaces `$total`, e.g. "$30–60". */
+  totalLabel?: string
+  /** Replaces "Of your $budget daily budget". */
+  budgetLabel?: string
 }
 export function TripStats({
   mainCount,
-  total,
-  budget,
+  total = 0,
+  budget = 0,
   completed,
+  totalLabel,
+  budgetLabel,
 }: TripStatsProps) {
   return (
     <div className="stats-grid">
@@ -19,8 +25,8 @@ export function TripStats({
       </article>
       <article>
         <span>ESTIMATE / PERSON</span>
-        <strong>${total}</strong>
-        <p>Of your ${budget} daily budget</p>
+        <strong>{totalLabel ?? `$${total}`}</strong>
+        <p>{budgetLabel ?? `Of your $${budget} daily budget`}</p>
       </article>
       <article>
         <span>ADVENTURE PROGRESS</span>

@@ -4,6 +4,10 @@ export type TravelCostsProps = {
   gasPrice: number
   onTravelModeChange: (mode: string) => void
   onGasPriceChange: (price: number) => void
+  /** Real route figures; without them the card shows the labelled sample scenario. */
+  route?: { miles: number; minutes: number } | null
+  /** Replaces `$total`, e.g. "$30–60". */
+  totalLabel?: string
 }
 export function TravelCosts({
   total,
@@ -11,7 +15,10 @@ export function TravelCosts({
   gasPrice,
   onTravelModeChange,
   onGasPriceChange,
+  route,
+  totalLabel,
 }: TravelCostsProps) {
+  const miles = route?.miles ?? 12
   return (
     <article className="desk-card">
       <div className="section-title">
@@ -33,20 +40,23 @@ export function TravelCosts({
         <div>
           <span>Food + activities</span>
           <strong>
-            ${total}
+            {totalLabel ?? `$${total}`}
             <small> / person</small>
           </strong>
         </div>
         <div>
-          <span>Sample route distance</span>
+          <span>{route ? 'Route distance' : 'Sample route distance'}</span>
           <strong>
-            12<small> miles</small>
+            {miles}
+            <small> miles</small>
           </strong>
         </div>
         <div>
-          <span>Sample travel time</span>
+          <span>{route ? 'Drive time' : 'Sample travel time'}</span>
           <strong>
-            {travelMode === 'Drive'
+            {route
+              ? route.minutes
+              : travelMode === 'Drive'
               ? '45'
               : travelMode === 'Walk'
                 ? '240'
@@ -58,7 +68,7 @@ export function TravelCosts({
           <div>
             <span>Fuel estimate · 25 mpg</span>
             <strong>
-              ${((12 / 25) * gasPrice).toFixed(2)}
+              ${((miles / 25) * gasPrice).toFixed(2)}
               <small> / vehicle</small>
             </strong>
           </div>
@@ -78,8 +88,9 @@ export function TravelCosts({
         </label>
       )}
       <p className="desk-footnote">
-        Distance and times use a fixed sample scenario, not live routing. Fuel =
-        12 miles ÷ 25 mpg × gas price. No fares or parking included.
+        {route
+          ? 'Distance and drive time come from the current questline. Fuel = route miles ÷ 25 mpg × gas price. Walking and transit are not routed. No fares or parking included.'
+          : 'Distance and times use a fixed sample scenario, not live routing. Fuel = 12 miles ÷ 25 mpg × gas price. No fares or parking included.'}
       </p>
     </article>
   )
